@@ -1,0 +1,1532 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>口播审片</title>
+  <style>
+    :root {
+      --bg: #151517;
+      --panel: #1d1d22;
+      --line: #2c2c34;
+      --text: #ecece8;
+      --muted: #8b8b86;
+      --keep: #3dba84;
+      --drop: #c45c4a;
+      --accent: #e8d5a3;
+      --sel: #3a5a8c;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); font: 14px/1.5 ui-sans-serif, system-ui, sans-serif; }
+    button { font: inherit; color: inherit; background: #2a2a31; border: 1px solid var(--line); border-radius: 6px; padding: 5px 10px; cursor: pointer; }
+    button:hover { border-color: #5a5a64; }
+    button.primary { background: var(--accent); color: #1a1408; border-color: var(--accent); font-weight: 600; }
+    button[aria-pressed="true"] { background: #3a3426; border-color: var(--accent); }
+    button:disabled { opacity: 0.45; cursor: default; }
+    input[type="number"] { width: 7rem; background: #121216; border: 1px solid var(--line); border-radius: 6px; padding: 4px 8px; color: inherit; font: inherit; }
+    select { background: #121216; border: 1px solid var(--line); border-radius: 6px; padding: 4px; color: inherit; font: inherit; }
+    .rate-label { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: 12px; }
+    select.play-rate { background: #2a2a31; padding: 5px 8px; cursor: pointer; }
+    select.play-rate:hover { border-color: #5a5a64; }
+    select.play-rate.fast { background: #3a3426; border-color: var(--accent); color: var(--text); }
+    .app { display: grid; grid-template-rows: auto 1fr 164px; height: 100%; }
+    header { display: flex; align-items: center; gap: 10px; padding: 8px 14px; border-bottom: 1px solid var(--line); }
+    header h1 { font-size: 14px; font-weight: 600; margin: 0; flex: none; white-space: nowrap; }
+    header .stats { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; min-width: 0; }
+    header .spacer { flex: 1; }
+    header button, header .rate-label { flex: none; white-space: nowrap; }
+    .center { display: flex; min-height: 0; }
+    .tx-pane { flex: 0 0 55%; min-width: 0; display: flex; flex-direction: column; min-height: 0; }
+    .split-resizer { flex: 0 0 8px; cursor: col-resize; position: relative; z-index: 2; touch-action: none; }
+    .split-resizer::before { content: ""; position: absolute; top: 0; bottom: 0; left: 50%; width: 1px; transform: translateX(-50%); background: var(--line); }
+    .split-resizer:hover::before, body.splitting .split-resizer::before { width: 2px; background: var(--accent); }
+    body.splitting, body.splitting * { cursor: col-resize !important; }
+    body.splitting { user-select: none; }
+    .transcript { overflow: auto; padding: 14px 20px; flex: 1; min-height: 0; user-select: none; }
+    .para { display: grid; grid-template-columns: 58px 1fr; gap: 10px; margin-bottom: 12px; }
+    .ptime { color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; padding-top: 4px; cursor: pointer; }
+    .ptime:hover { color: var(--accent); }
+    .pbody { line-height: 1.95; font-size: 15px; }
+    .w { cursor: pointer; border-radius: 3px; }
+    .w:hover { background: #2a2a33; }
+    .w.drop { color: #6f6f68; text-decoration: line-through; text-decoration-color: var(--drop); text-decoration-thickness: 1.5px; }
+    .w.cur { background: #3a3426; color: var(--accent); }
+    .w.sel { background: var(--sel); color: #fff; }
+    .gap { display: inline; margin: 0 1px; padding: 0 3px; border-radius: 3px; font-size: 12px; font-variant-numeric: tabular-nums; cursor: pointer; }
+    .gap.cut { color: #6f6f68; text-decoration: line-through; text-decoration-color: var(--drop); text-decoration-thickness: 1.5px; }
+    .gap.kept { background: #3a3a40; color: #bdbdb6; text-decoration: none; }
+    .gap.cur, .gap.sel { outline: 1px solid var(--accent); }
+    .transcript.selecting { cursor: text; }
+    .tx-hint { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; padding: 8px 20px; border-bottom: 1px solid var(--line); color: var(--muted); font-size: 12px; }
+    .tx-hint kbd { display: inline-block; padding: 1px 6px; border-radius: 4px; border: 1px solid var(--line); background: #222228; color: var(--text); font-size: 11px; }
+    .preview { display: flex; flex-direction: column; min-height: 0; min-width: 280px; flex: 1 1 auto; background: #0c0c0e; }
+    .player { padding: 12px 14px 8px; }
+    video, audio { width: 100%; max-height: 46vh; background: #000; border-radius: 8px; }
+    .editor { flex: 1; overflow: auto; padding: 10px 14px; border-top: 1px solid var(--line); background: var(--panel); }
+    .editor h2 { font-size: 12px; color: var(--muted); font-weight: 600; margin: 0 0 8px; }
+    .field { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; gap: 8px; }
+    .editor p { color: var(--muted); font-size: 13px; margin: 8px 0; }
+    .editor .actions { display: flex; gap: 8px; margin-top: 8px; }
+    .flags .flag { cursor: pointer; color: var(--muted); font-size: 12px; padding: 3px 0; font-variant-numeric: tabular-nums; }
+    .flags .flag:hover { color: var(--accent); }
+    .flags .flag.heard { color: #5d5d58; }
+    .timeline { position: relative; border-top: 1px solid var(--line); background: #101013; display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+    .tl-resizer { position: absolute; top: -3px; left: 0; right: 0; height: 6px; cursor: row-resize; z-index: 3; }
+    #wave { flex: 1; min-height: 0; width: 100%; cursor: crosshair; touch-action: none; display: block; }
+    .clock { display: flex; gap: 16px; align-items: center; padding: 4px 14px; color: var(--muted); font-variant-numeric: tabular-nums; font-size: 11px; }
+    .clock .spacer { flex: 1; }
+    .clock button { padding: 1px 8px; font-size: 11px; }
+    .status-wrap { display: flex; align-items: center; gap: 8px; flex: 0 1 auto; min-width: 0; max-width: 22rem; color: var(--muted); font-size: 12px; }
+    .status-wrap[hidden] { display: none; }
+    .status { min-width: 0; overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .export-progress { display: flex; align-items: center; }
+    .export-progress[hidden] { display: none; }
+    .export-progress-track { width: 148px; height: 6px; border-radius: 99px; background: #2a2a31; overflow: hidden; }
+    .export-progress-track > span { display: block; height: 100%; width: 0%; background: var(--accent); border-radius: 99px; }
+    .export-progress.indeterminate .export-progress-track > span { width: 36%; animation: export-slide 1.1s ease-in-out infinite; }
+    @keyframes export-slide { from { transform: translateX(-120%); } to { transform: translateX(340%); } }
+    .status.ok { color: var(--keep); }
+    .status.err { color: var(--drop); }
+    .empty { padding: 24px; color: var(--muted); }
+    #marquee { display: none; position: fixed; z-index: 8; pointer-events: none; border: 1px solid var(--accent); background: rgba(232, 213, 163, 0.12); border-radius: 2px; }
+  </style>
+</head>
+<body>
+  <div id="marquee" aria-hidden="true"></div>
+  <div class="app">
+    <header>
+      <h1>口播审片</h1>
+      <span class="stats" id="stats"></span>
+      <div class="spacer"></div>
+      <label class="rate-label" for="playRate">倍速
+        <select id="playRate" class="play-rate" title="播放倍速">
+          <option value="1">1.0×</option>
+          <option value="1.1">1.1×</option>
+          <option value="1.2">1.2×</option>
+          <option value="1.3">1.3×</option>
+        </select>
+      </label>
+      <span class="status-wrap" id="statusWrap" hidden>
+        <span class="export-progress" id="exportProgress" hidden>
+          <span class="export-progress-track" id="exportProgressTrack" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-label="导出成片进度"><span id="exportProgressBar"></span></span>
+        </span>
+        <span class="status" id="status" role="status"></span>
+      </span>
+      <button type="button" id="exportXml" hidden title="选择文件夹并导出 XML。下次默认打开上次的位置">导出 XML</button>
+      <button type="button" id="exportSrt" title="选择文件夹并导出校正后的字幕。下次默认打开上次的位置">导出字幕</button>
+      <button type="button" id="exportMp4" title="按当前切口渲一条固定帧率成片。切口会焊进这个文件，改一句要重新导出">导出成片</button>
+      <button type="button" class="primary" id="save">保存</button>
+    </header>
+    <div class="center">
+      <div class="tx-pane" id="txPane">
+        <div class="tx-hint" id="txHint">
+          <span><kbd>单击</kbd> 字词去听</span>
+          <span><kbd>框选</kbd> 松手自动删 / 恢复</span>
+          <span><kbd>Space</kbd> 播放</span>
+        </div>
+        <div class="transcript" id="transcript"></div>
+      </div>
+      <div class="split-resizer" id="splitResizer" title="左右拖动，调整逐字稿和画面的宽度"></div>
+      <div class="preview">
+        <div class="player" id="playerBox"></div>
+        <div class="editor" id="editor"></div>
+      </div>
+    </div>
+    <div class="timeline" id="timelineBox">
+      <div class="tl-resizer" id="tlResizer"></div>
+      <canvas id="wave"></canvas>
+      <div class="clock">
+        <span id="clockSource">源片 00:00.0</span>
+        <span id="clockCut">剪后 00:00.0</span>
+        <span id="clockDur"></span>
+        <span id="waveHint">波形加载中…</span>
+        <span class="spacer"></span>
+        <button type="button" id="zoomOut" title="缩小">−</button>
+        <button type="button" id="zoomIn" title="放大">+</button>
+        <button type="button" id="zoomFit" title="适配全长">适配</button>
+      </div>
+    </div>
+  </div>
+  <script src="/review_cut.js"></script>
+  <script>
+    const { planCutAction, silenceCuts, silenceMarks, silenceLabel, silenceTitle, pauseDeleteIntervals } = ReviewCut;
+    const $ = (id) => document.getElementById(id);
+    const REASONS = ["speech", "breath", "retake", "stutter", "long-pause", "uncertain", "manual"];
+    const EPS = 0.001;
+
+    let state = null;
+    let media = null;
+    let wave = null;
+    let waveMax = 1;
+    let words = []; // {w, s, e, seg, el}
+    let gaps = []; // {start, end, el}
+    let cutMode = true;
+    let dirty = false;
+    let selected = null; // {kind:'keep'|'drop', index}
+    let selectedGap = null;
+    let selecting = false;
+    let selectDragged = false;
+    let hasTextSelection = false;
+    let selectStartX = 0;
+    let selectStartY = 0;
+    let selA = null;
+    let selB = null;
+    let selGaps = [];
+    let selectCaptureEl = null;
+    let hoverWord = -1;
+    let curWord = -1;
+    let playUntil = null;
+    let scrubbing = false, edgeDrag = null, tlDrag = null, wavePan = null, splitDrag = null;
+    let view = { s: 0, e: 0 }; // e <= s 表示适配全长
+    const MIN_WINDOW = 4;
+
+    const round3 = (x) => Math.round(x * 1000) / 1000;
+    const escapeHtml = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+    const fmt = (s) => {
+      if (!Number.isFinite(s) || s < 0) s = 0;
+      const m = Math.floor(s / 60);
+      const sec = s - m * 60;
+      return `${String(m).padStart(2, "0")}:${sec.toFixed(1).padStart(4, "0")}`;
+    };
+    const fmtMs = (s) => {
+      if (!Number.isFinite(s) || s < 0) s = 0;
+      const m = Math.floor(s / 60);
+      const sec = s - m * 60;
+      return `${String(m).padStart(2, "0")}:${sec.toFixed(3).padStart(6, "0")}`;
+    };
+
+    const keeps = () => (state?.decisions?.keep || []).slice().sort((a, b) => a.sourceStart - b.sourceStart);
+    const duration = () => Number(state?.decisions?.source?.duration) || wave?.duration || media?.duration || 0;
+
+    function sourceToCut(t) {
+      let acc = 0;
+      for (const k of keeps()) {
+        if (t < k.sourceStart) return { inDrop: true, next: k.sourceStart, cut: acc };
+        if (t < k.sourceEnd) return { inDrop: false, cut: acc + (t - k.sourceStart) };
+        acc += k.sourceEnd - k.sourceStart;
+      }
+      return { inDrop: true, cut: acc, ended: true };
+    }
+
+    function isKeptAt(t) {
+      for (const k of keeps()) {
+        if (t < k.sourceStart) return false;
+        if (t < k.sourceEnd) return true;
+      }
+      return false;
+    }
+
+    function textForRange(s, e) {
+      return words.filter((r) => r.s < e - EPS && r.e > s + EPS).map((r) => r.w).join("");
+    }
+
+    function nextId(prefix) {
+      let max = 0;
+      const scan = (arr) => (arr || []).forEach((it) => {
+        const m = /^([a-z]+)(\d+)$/.exec(it.id || "");
+        if (m && m[1] === prefix) max = Math.max(max, Number(m[2]));
+      });
+      scan(state.decisions.keep); scan(state.decisions.drop); scan(state.decisions.flags);
+      return prefix + String(max + 1).padStart(3, "0");
+    }
+
+    function recomputeTimeline() {
+      const dec = state.decisions;
+      dec.keep.sort((a, b) => a.sourceStart - b.sourceStart);
+      let t = 0;
+      for (const k of dec.keep) {
+        k.sourceStart = round3(k.sourceStart);
+        k.sourceEnd = round3(k.sourceEnd);
+        k.timelineStart = round3(t);
+        k.timelineEnd = round3(t + (k.sourceEnd - k.sourceStart));
+        t += k.sourceEnd - k.sourceStart;
+      }
+    }
+
+    function syncStatusChrome() {
+      const msg = $("status").textContent;
+      const busy = !$("exportProgress").hidden;
+      $("statusWrap").hidden = !msg && !busy;
+    }
+
+    function setStatus(msg, cls) {
+      const el = $("status");
+      el.textContent = msg || "";
+      el.title = msg || "";
+      el.className = "status" + (cls ? " " + cls : "");
+      syncStatusChrome();
+    }
+
+    function showExportProgress(fraction) {
+      const box = $("exportProgress");
+      const bar = $("exportProgressBar");
+      const track = $("exportProgressTrack");
+      box.hidden = false;
+      if (fraction == null || fraction <= 0) {
+        box.classList.add("indeterminate");
+        bar.style.width = "";
+        track.setAttribute("aria-valuenow", "0");
+        syncStatusChrome();
+        return;
+      }
+      const pct = Math.max(1, Math.min(100, Math.round(fraction * 100)));
+      box.classList.remove("indeterminate");
+      bar.style.width = pct + "%";
+      track.setAttribute("aria-valuenow", String(pct));
+      syncStatusChrome();
+    }
+
+    function hideExportProgress() {
+      const box = $("exportProgress");
+      box.hidden = true;
+      box.classList.remove("indeterminate");
+      $("exportProgressBar").style.width = "0%";
+      $("exportProgressTrack").setAttribute("aria-valuenow", "0");
+      syncStatusChrome();
+    }
+
+    function formatRemain(seconds) {
+      if (seconds == null || !Number.isFinite(seconds) || seconds < 8) return "";
+      if (seconds < 60) return " · 大约还要 " + Math.ceil(seconds) + " 秒";
+      const minutes = Math.ceil(seconds / 60);
+      if (minutes < 60) return " · 大约还要 " + minutes + " 分钟";
+      const hours = Math.floor(minutes / 60);
+      const rest = minutes % 60;
+      return rest ? " · 大约还要 " + hours + " 小时 " + rest + " 分钟" : " · 大约还要 " + hours + " 小时";
+    }
+
+    async function readExportEvents(res) {
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buf = "";
+      let last = null;
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+        let nl = buf.indexOf("\n");
+        while (nl >= 0) {
+          const line = buf.slice(0, nl).trim();
+          buf = buf.slice(nl + 1);
+          nl = buf.indexOf("\n");
+          if (!line) continue;
+          const event = JSON.parse(line);
+          if (typeof event.progress === "number") {
+            showExportProgress(event.progress);
+            const pct = event.progress <= 0 ? 0 : Math.max(1, Math.min(100, Math.round(event.progress * 100)));
+            setStatus("正在导出成片 " + pct + "%" + formatRemain(event.remaining));
+          } else {
+            last = event;
+          }
+        }
+      }
+      return last || { ok: false, error: "导出没有返回结果" };
+    }
+
+    function renderStats() {
+      const dur = duration();
+      if (!state?.hasDecisions) {
+        $("stats").textContent = state?.hasTranscript ? "仅转写，还没有 cut_decisions.json" : "";
+        return;
+      }
+      const cutDur = keeps().reduce((a, k) => a + (k.sourceEnd - k.sourceStart), 0);
+      const pct = dur ? Math.round((1 - cutDur / dur) * 100) : 0;
+      const left = unheardFlags();
+      $("stats").textContent = `源片 ${fmt(dur)} · 剪后 ${fmt(cutDur)} · 删 ${pct}%` + (left ? ` · 建议听还剩 ${left} 处` : "");
+    }
+
+    function unheardFlags() {
+      return (state?.decisions?.flags || []).filter((f) => !f.heard).length;
+    }
+
+    /* ---------- transcript ---------- */
+
+    function renderTranscript() {
+      const box = $("transcript");
+      box.innerHTML = "";
+      words = [];
+      curWord = -1;
+      const segs = state?.transcript?.segments || [];
+      if (!segs.length) {
+        box.innerHTML = `<div class="empty">这个 run 还没有转写。先跑 transcribe.py。</div>`;
+        return;
+      }
+      const frag = document.createDocumentFragment();
+      segs.forEach((seg, si) => {
+        const p = document.createElement("div");
+        p.className = "para";
+        const t = document.createElement("div");
+        t.className = "ptime";
+        t.textContent = fmt(seg.start);
+        t.onclick = () => seek(seg.start + EPS);
+        p.appendChild(t);
+        const body = document.createElement("div");
+        body.className = "pbody";
+        const ws = seg.words && seg.words.length ? seg.words : [{ word: seg.text, start: seg.start, end: seg.end }];
+        ws.forEach((w) => {
+          const el = document.createElement("span");
+          el.className = "w";
+          el.textContent = w.word;
+          el.dataset.i = words.length;
+          words.push({ w: w.word, s: w.start, e: w.end, seg: si, el });
+          body.appendChild(el);
+        });
+        p.appendChild(body);
+        frag.appendChild(p);
+      });
+      box.appendChild(frag);
+      recomputeWordStatus();
+    }
+
+    function wordOverlap(rec, ks) {
+      let total = 0;
+      for (const k of ks) {
+        const a = Math.max(rec.s, k.sourceStart);
+        const b = Math.min(rec.e, k.sourceEnd);
+        if (b > a) total += b - a;
+      }
+      return total;
+    }
+
+    function recomputeWordStatus() {
+      const ks = state?.hasDecisions ? keeps() : null;
+      for (const rec of words) {
+        const kept = !ks || wordOverlap(rec, ks) >= 0.02;
+        rec.el.classList.toggle("drop", !kept);
+      }
+      refreshGaps();
+    }
+
+    function pauseMarks() {
+      const bare = words.map((r) => ({ s: r.s, e: r.e }));
+      const ks = keeps();
+      if (wave && wave.peaks && wave.duration) {
+        return silenceMarks(bare, ks, wave.peaks, wave.duration, { drops: state?.decisions?.drop || [] });
+      }
+      return silenceCuts(bare, ks, { from: 0, to: duration() || null }).map((cut) => ({
+        start: cut.start,
+        end: cut.end,
+        afterWord: cut.afterWord,
+        role: "cut",
+        seconds: cut.removed,
+        removed: cut.removed,
+        kept: cut.kept,
+        kind: cut.kind === "silence" ? "silence" : "breath",
+      }));
+    }
+
+    function refreshGaps() {
+      const prev = selectedGap;
+      for (const g of gaps) g.el.remove();
+      gaps = [];
+      if (!state?.hasDecisions || !words.length) return;
+      const marks = pauseMarks();
+      const groups = new Map();
+      for (const mark of marks) {
+        if (!groups.has(mark.afterWord)) groups.set(mark.afterWord, []);
+        groups.get(mark.afterWord).push(mark);
+      }
+      for (const [after, list] of groups) {
+        let prevEl = after < 0 ? null : words[after] && words[after].el;
+        if (after >= 0 && !prevEl) continue;
+        for (const mark of list) {
+          const el = document.createElement("span");
+          el.className = "gap " + (mark.role === "kept" ? "kept" : "cut");
+          el.textContent = silenceLabel(mark);
+          el.title = silenceTitle(mark);
+          el.dataset.g = String(gaps.length);
+          if (!prevEl) words[0].el.before(el);
+          else prevEl.after(el);
+          prevEl = el;
+          gaps.push({ start: mark.start, end: mark.end, el, mark });
+        }
+      }
+      selectedGap = null;
+      if (prev) {
+        const again = gaps.find((g) => g.mark.role === prev.role && Math.abs(g.mark.start - prev.start) < 0.08);
+        if (again) {
+          selectedGap = again.mark;
+          again.el.classList.add("sel");
+        }
+      }
+    }
+
+    function highlightWord(t) {
+      let lo = 0, hi = words.length - 1, idx = -1;
+      while (lo <= hi) {
+        const mid = (lo + hi) >> 1;
+        if (words[mid].s <= t + EPS) { idx = mid; lo = mid + 1; } else hi = mid - 1;
+      }
+      if (idx === curWord) {
+        for (const g of gaps) g.el.classList.toggle("cur", t >= g.start && t < g.end);
+        return;
+      }
+      if (curWord >= 0 && words[curWord]) words[curWord].el.classList.remove("cur");
+      curWord = idx;
+      if (idx >= 0) {
+        words[idx].el.classList.add("cur");
+        if (media && !media.paused) words[idx].el.scrollIntoView({ block: "nearest" });
+      }
+      for (const g of gaps) g.el.classList.toggle("cur", t >= g.start && t < g.end);
+    }
+
+    function wordKept(i) {
+      if (!state?.hasDecisions || i < 0 || i >= words.length) return true;
+      return wordOverlap(words[i], keeps()) >= 0.02;
+    }
+
+    function toggleWord(i, quiet) {
+      if (!state?.hasDecisions || i < 0 || i >= words.length) return;
+      if (wordKept(i)) applyDelete(i, i, quiet);
+      else applyRestore(i, i, quiet);
+    }
+
+    function clearSelection() {
+      selA = selB = null;
+      selGaps = [];
+      hasTextSelection = false;
+      document.querySelectorAll(".w.sel").forEach((el) => el.classList.remove("sel"));
+      document.querySelectorAll(".gap.sel").forEach((el) => el.classList.remove("sel"));
+      hideMarquee();
+    }
+
+    function wordElAt(x, y) {
+      const hit = document.elementFromPoint(x, y);
+      return hit && hit.closest ? hit.closest(".w") : null;
+    }
+
+    function hitsRect(el, x0, y0, x1, y1) {
+      const L = Math.min(x0, x1), R = Math.max(x0, x1), T = Math.min(y0, y1), B = Math.max(y0, y1);
+      const r = el.getBoundingClientRect();
+      return r.width > 0 && r.right >= L && r.left <= R && r.bottom >= T && r.top <= B;
+    }
+
+    function hideMarquee() {
+      const m = $("marquee");
+      if (m) m.style.display = "none";
+    }
+
+    function updateMarquee(x0, y0, x1, y1) {
+      const m = $("marquee");
+      if (!m) return;
+      const L = Math.min(x0, x1), T = Math.min(y0, y1);
+      m.style.display = "block";
+      m.style.left = `${L}px`;
+      m.style.top = `${T}px`;
+      m.style.width = `${Math.abs(x1 - x0)}px`;
+      m.style.height = `${Math.abs(y1 - y0)}px`;
+    }
+
+    function selectableItems() {
+      return [...txBox.querySelectorAll(".w, .gap")].map((el) => {
+        if (el.classList.contains("w")) return { kind: "word", i: Number(el.dataset.i), el };
+        const g = gaps[Number(el.dataset.g)];
+        return g ? { kind: "gap", g, el } : null;
+      }).filter(Boolean);
+    }
+
+    function paintSelection(span) {
+      const wordOn = new Set();
+      const gapOn = new Set();
+      for (const it of span) {
+        if (it.kind === "word") wordOn.add(it.i);
+        else gapOn.add(it.g);
+      }
+      words.forEach((rec, i) => rec.el.classList.toggle("sel", wordOn.has(i)));
+      gaps.forEach((g) => g.el.classList.toggle("sel", gapOn.has(g)));
+    }
+
+    function syncSelectFromMarquee(cx, cy) {
+      const items = selectableItems();
+      const hit = [];
+      items.forEach((it, idx) => {
+        if (hitsRect(it.el, selectStartX, selectStartY, cx, cy)) hit.push(idx);
+      });
+      if (!hit.length) {
+        selA = selB = null;
+        selGaps = [];
+        paintSelection([]);
+        return;
+      }
+      const span = items.slice(Math.min(...hit), Math.max(...hit) + 1);
+      const wordIdx = span.filter((it) => it.kind === "word").map((it) => it.i);
+      selA = wordIdx.length ? Math.min(...wordIdx) : null;
+      selB = wordIdx.length ? Math.max(...wordIdx) : null;
+      selGaps = span.filter((it) => it.kind === "gap").map((it) => it.g);
+      paintSelection(span);
+    }
+
+    function updateSelClasses() {
+      if (selA == null || selB == null) {
+        document.querySelectorAll(".w.sel").forEach((el) => el.classList.remove("sel"));
+        return;
+      }
+      const a = Math.min(selA, selB), b = Math.max(selA, selB);
+      words.forEach((rec, i) => rec.el.classList.toggle("sel", i >= a && i <= b));
+    }
+
+    function applyMixedSelection() {
+      const wordList = [];
+      if (selA != null && selB != null) {
+        for (let i = Math.min(selA, selB); i <= Math.max(selA, selB); i++) wordList.push(i);
+      }
+      const gapList = selGaps.slice();
+      if (!wordList.length && !gapList.length) return;
+      const anyKept = wordList.some((i) => wordKept(i)) || gapList.some((g) => g.mark.role === "kept");
+      const anyStruck = wordList.some((i) => !wordKept(i)) || gapList.some((g) => g.mark.role === "cut");
+      if (!anyKept && !anyStruck) return;
+      selectedGap = null;
+      selected = null;
+      if (anyKept) {
+        if (wordList.length) applyDelete(Math.min(...wordList), Math.max(...wordList), true);
+        gapList.forEach((g) => { if (g.mark.role === "kept") deleteRange(g.start, g.end, true); });
+      } else {
+        if (wordList.length) applyRestore(Math.min(...wordList), Math.max(...wordList), true);
+        gapList.forEach((g) => { if (g.mark.role === "cut") restoreRange(g.start, g.end, true); });
+      }
+      afterMutation();
+    }
+
+    /* ---------- editing ---------- */
+
+    function applyDelete(a, b, quiet) {
+      if (!state?.hasDecisions) return;
+      const start = words[a].s, end = words[b].e;
+      const dec = state.decisions;
+      const out = [];
+      for (const k of dec.keep) {
+        if (k.sourceEnd <= start + EPS || k.sourceStart >= end - EPS) { out.push(k); continue; }
+        if (k.sourceStart < start - EPS && start - k.sourceStart >= 0.02) {
+          out.push({ ...k, id: nextId("k"), sourceEnd: round3(start), text: textForRange(k.sourceStart, start) });
+        }
+        if (k.sourceEnd > end + EPS && k.sourceEnd - end >= 0.02) {
+          out.push({ ...k, id: nextId("k"), sourceStart: round3(end), text: textForRange(end, k.sourceEnd) });
+        }
+      }
+      dec.keep = out;
+      const cut = dec.drop.slice().sort((x, y) => x.sourceStart - y.sourceStart);
+      for (const [s, e] of subtractKeeps(start, end, cut)) {
+        if (e - s < 0.02) continue;
+        dec.drop.push({ id: nextId("d"), sourceStart: round3(s), sourceEnd: round3(e), text: textForRange(s, e), reason: "manual" });
+      }
+      afterMutation(quiet);
+    }
+
+    function applyRestore(a, b, quiet) {
+      if (!state?.hasDecisions) return;
+      const start = words[a].s, end = words[b].e;
+      const dec = state.decisions;
+      const ivs = subtractKeeps(start, end, keeps());
+      for (const [s, e] of ivs) {
+        if (e - s < 0.02) continue;
+        dec.keep.push({ id: nextId("k"), sourceStart: round3(s), sourceEnd: round3(e), text: textForRange(s, e), reason: "speech" });
+      }
+      const nd = [];
+      for (const d of dec.drop) {
+        if (d.sourceEnd <= start + EPS || d.sourceStart >= end - EPS) { nd.push(d); continue; }
+        if (d.sourceStart < start - EPS) nd.push({ ...d, id: nextId("d"), sourceEnd: round3(start) });
+        if (d.sourceEnd > end + EPS) nd.push({ ...d, id: nextId("d"), sourceStart: round3(end) });
+      }
+      dec.drop = nd;
+      afterMutation(quiet);
+    }
+
+    function restoreRange(start, end, quiet) {
+      if (!state?.hasDecisions) return;
+      const dec = state.decisions;
+      const ivs = subtractKeeps(start, end, keeps());
+      for (const [s, e] of ivs) {
+        if (e - s < 0.02) continue;
+        dec.keep.push({ id: nextId("k"), sourceStart: round3(s), sourceEnd: round3(e), text: "", reason: "breath" });
+      }
+      const nd = [];
+      for (const d of dec.drop) {
+        if (d.sourceEnd <= start + EPS || d.sourceStart >= end - EPS) { nd.push(d); continue; }
+        if (d.sourceStart < start - EPS) nd.push({ ...d, id: nextId("d"), sourceEnd: round3(start) });
+        if (d.sourceEnd > end + EPS) nd.push({ ...d, id: nextId("d"), sourceStart: round3(end) });
+      }
+      dec.drop = nd;
+      if (!quiet) afterMutation();
+    }
+
+    function deleteRange(start, end, quiet) {
+      if (!state?.hasDecisions) return;
+      const bare = words.map((r) => ({ s: r.s, e: r.e }));
+      const ivs = pauseDeleteIntervals(start, end, bare, keeps());
+      if (!ivs.length) return;
+      const dec = state.decisions;
+      for (const [s, e] of ivs) {
+        const out = [];
+        for (const k of dec.keep) {
+          if (k.sourceEnd <= s + EPS || k.sourceStart >= e - EPS) { out.push(k); continue; }
+          if (k.sourceStart < s - EPS && s - k.sourceStart >= 0.02) {
+            out.push({ ...k, id: nextId("k"), sourceEnd: round3(s), text: textForRange(k.sourceStart, s) });
+          }
+          if (k.sourceEnd > e + EPS && k.sourceEnd - e >= 0.02) {
+            out.push({ ...k, id: nextId("k"), sourceStart: round3(e), text: textForRange(e, k.sourceEnd) });
+          }
+        }
+        dec.keep = out;
+        dec.drop.push({
+          id: nextId("d"),
+          sourceStart: round3(s),
+          sourceEnd: round3(e),
+          text: "",
+          reason: e - s >= 0.8 ? "long-pause" : "breath",
+        });
+      }
+      if (!quiet) afterMutation();
+    }
+
+    function subtractKeeps(start, end, ks) {
+      const free = [];
+      let cur = start;
+      for (const k of ks) {
+        if (k.sourceEnd <= cur) continue;
+        if (k.sourceStart >= end) break;
+        if (k.sourceStart > cur) free.push([cur, Math.min(k.sourceStart, end)]);
+        cur = Math.max(cur, k.sourceEnd);
+        if (cur >= end) break;
+      }
+      if (cur < end) free.push([cur, end]);
+      return free;
+    }
+
+    function afterMutation(quiet) {
+      recomputeTimeline();
+      dirty = true;
+      setStatus("未保存");
+      if (quiet) {
+        recomputeWordStatus();
+        renderStats();
+        drawWave();
+      } else {
+        selected = null;
+        refreshViews();
+      }
+    }
+
+    function refreshViews() {
+      recomputeWordStatus();
+      renderStats();
+      renderEditor();
+      drawWave();
+    }
+
+    function currentItem() {
+      if (!selected || !state?.decisions) return null;
+      const arr = selected.kind === "keep" ? state.decisions.keep : state.decisions.drop;
+      return arr[selected.index];
+    }
+
+    function selectSegmentAt(t) {
+      if (!state?.hasDecisions) return;
+      selectedGap = null;
+      document.querySelectorAll(".gap.sel").forEach((el) => el.classList.remove("sel"));
+      const ks = state.decisions.keep;
+      for (let i = 0; i < ks.length; i++) {
+        if (t >= ks[i].sourceStart - EPS && t < ks[i].sourceEnd + EPS) { selected = { kind: "keep", index: i }; renderEditor(); drawWave(); return; }
+      }
+      const ds = state.decisions.drop || [];
+      for (let i = 0; i < ds.length; i++) {
+        if (t >= ds[i].sourceStart - EPS && t < ds[i].sourceEnd + EPS) { selected = { kind: "drop", index: i }; renderEditor(); drawWave(); return; }
+      }
+      selected = null;
+      renderEditor();
+      drawWave();
+    }
+
+    function patch(fields) {
+      const item = currentItem();
+      if (!item) return;
+      Object.assign(item, fields);
+      recomputeTimeline();
+      dirty = true;
+      setStatus("未保存");
+      refreshViews();
+    }
+
+    function toggleSelected() {
+      if (!selected || !state?.decisions) return;
+      const from = selected.kind === "keep" ? state.decisions.keep : state.decisions.drop;
+      const to = selected.kind === "keep" ? state.decisions.drop : state.decisions.keep;
+      const [item] = from.splice(selected.index, 1);
+      item.reason = selected.kind === "keep" ? "manual" : "speech";
+      to.push(item);
+      afterMutation();
+    }
+
+    function nudge(edge, delta) {
+      const item = currentItem();
+      if (!item) return;
+      if (edge === "start") patch({ sourceStart: Math.max(0, round3(item.sourceStart + delta)) });
+      else patch({ sourceEnd: round3(Math.max(item.sourceStart + 0.04, item.sourceEnd + delta)) });
+    }
+
+    function renderEditor() {
+      const ed = $("editor");
+      const item = currentItem();
+      let html = "";
+      if (selectedGap) {
+        const name = selectedGap.kind === "silence" ? "静音" : "气口";
+        const verb = selectedGap.role === "cut" ? "划掉" : "留下";
+        html += `<h2>${verb}的${name}</h2>
+          <p>${escapeHtml(silenceLabel(selectedGap))}　${verb} ${selectedGap.seconds.toFixed(2)} 秒</p>
+          <div class="actions">
+            <button type="button" id="btnPlay">听这段</button>
+            <button type="button" id="btnGap">${selectedGap.role === "cut" ? "恢复" : "划掉"}</button>
+          </div>`;
+      } else if (item) {
+        html += `<h2>${selected.kind === "keep" ? "保留段" : "删除段"} · ${escapeHtml(item.id || "")}</h2>
+          <div class="field"><label>起点</label><input id="inStart" type="number" step="0.04" value="${item.sourceStart}" /></div>
+          <div class="field"><label>终点</label><input id="inEnd" type="number" step="0.04" value="${item.sourceEnd}" /></div>
+          <div class="field"><label>原因</label><select id="inReason">${REASONS.map((r) => `<option ${item.reason === r ? "selected" : ""}>${r}</option>`).join("")}</select></div>
+          <p>${escapeHtml(item.text || "")}</p>
+          <div class="actions">
+            <button type="button" id="btnPlay">听这段</button>
+            <button type="button" id="btnToggle">${selected.kind === "keep" ? "改为删除" : "改为保留"}</button>
+          </div>`;
+      } else if (!state?.hasDecisions) {
+        html = `<h2>字词</h2><p>还没有 cut_decisions.json，只能看转写和源片。</p>`;
+      }
+      const flags = state?.decisions?.flags || [];
+      if (flags.length) {
+        const left = unheardFlags();
+        const head = left ? `建议听 · 还有 ${left} 处没听（共 ${flags.length}）` : `建议听 · ${flags.length} 处都听过`;
+        html += `<h2 style="margin-top:14px">${head}</h2><div class="flags">` +
+          flags.map((f, i) => `<div class="flag${f.heard ? " heard" : ""}" data-i="${i}" title="${f.heard ? "听过。再点一次重听" : "点一下去听，这条记为听过"}">${f.heard ? "✓" : "▸"} ${fmtMs(f.sourceStart)} ${escapeHtml(f.note || f.reason || "")}</div>`).join("") + `</div>`;
+      }
+      ed.innerHTML = html;
+      if (selectedGap) {
+        const gap = selectedGap;
+        $("btnPlay").onclick = () => { playUntil = gap.end; seek(gap.start + EPS); media && media.play(); };
+        $("btnGap").onclick = () => (gap.role === "cut" ? restoreRange(gap.start, gap.end) : deleteRange(gap.start, gap.end));
+      } else if (item) {
+        $("inStart").onchange = () => patch({ sourceStart: Number($("inStart").value) });
+        $("inEnd").onchange = () => patch({ sourceEnd: Number($("inEnd").value) });
+        $("inReason").onchange = () => patch({ reason: $("inReason").value });
+        $("btnToggle").onclick = toggleSelected;
+        $("btnPlay").onclick = () => { playUntil = item.sourceEnd; seek(item.sourceStart + EPS); media && media.play(); };
+      }
+      ed.querySelectorAll(".flag").forEach((el) => {
+        el.onclick = () => {
+          const f = flags[Number(el.dataset.i)];
+          playUntil = null;
+          seek(Number(f.sourceStart) + EPS);
+          media && media.play();
+          if (!f.heard) {
+            f.heard = true;
+            dirty = true;
+            setStatus("未保存");
+            renderStats();
+            renderEditor();
+          }
+        };
+      });
+    }
+
+    /* ---------- waveform ---------- */
+
+    function viewRange() {
+      const d = duration() || 1;
+      return view.e > view.s ? [view.s, view.e] : [0, d];
+    }
+
+    function setView(s, e) {
+      const d = duration() || 1;
+      if (e - s >= d - EPS) { view = { s: 0, e: 0 }; return; }
+      if (e - s < MIN_WINDOW) { const m = (s + e) / 2; s = m - MIN_WINDOW / 2; e = m + MIN_WINDOW / 2; }
+      if (s < 0) { e -= s; s = 0; }
+      if (e > d) { s -= e - d; e = d; }
+      if (s < 0) s = 0;
+      view = { s: round3(s), e: round3(e) };
+    }
+
+    function niceStep(len) {
+      for (const s of [0.5, 1, 2, 5, 10, 15, 30, 60, 120, 300, 600]) if (len / s <= 22) return s;
+      return 900;
+    }
+
+    function tToX(t, W) {
+      const [s, e] = viewRange();
+      return ((t - s) / (e - s)) * W;
+    }
+
+    function xToT(x, W) {
+      const [s, e] = viewRange();
+      return Math.max(0, Math.min(duration(), s + (x / W) * (e - s)));
+    }
+
+    function drawWave() {
+      const cv = $("wave");
+      const dpr = window.devicePixelRatio || 1;
+      const W = cv.clientWidth | 0, H = cv.clientHeight | 0;
+      if (!W || !H) return;
+      if (cv.width !== W * dpr || cv.height !== H * dpr) { cv.width = W * dpr; cv.height = H * dpr; }
+      const ctx = cv.getContext("2d");
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.fillStyle = "#101013";
+      ctx.fillRect(0, 0, W, H);
+      const dur = duration() || 1;
+      const [vs, ve] = viewRange();
+      const len = ve - vs;
+      const hasDec = !!state?.hasDecisions;
+      const keptMask = new Uint8Array(W);
+      if (hasDec) {
+        for (const k of keeps()) {
+          const x0 = Math.max(0, Math.floor(tToX(k.sourceStart, W)));
+          const x1 = Math.min(W, Math.ceil(tToX(k.sourceEnd, W)));
+          if (x1 > x0) keptMask.fill(1, x0, x1);
+        }
+      } else {
+        keptMask.fill(1);
+      }
+      const stripH = 5;
+      for (let x = 0; x < W; x++) {
+        ctx.fillStyle = keptMask[x] ? "rgba(61,186,132,0.55)" : "rgba(196,92,74,0.6)";
+        ctx.fillRect(x, 0, 1, stripH);
+      }
+      ctx.fillStyle = "#55555e";
+      ctx.font = "10px ui-sans-serif, system-ui, sans-serif";
+      const step = niceStep(len);
+      for (let t = Math.ceil(vs / step) * step; t <= ve + EPS; t += step) {
+        const x = tToX(t, W);
+        ctx.fillRect(x, stripH + 2, 1, 4);
+        ctx.fillText(fmt(t), x + 3, stripH + 13);
+      }
+      const midY = H * 0.62, maxH = H * 0.36;
+      if (wave?.peaks?.length) {
+        const n = wave.peaks.length;
+        const binDur = (wave.duration || dur) / n;
+        for (let x = 0; x < W; x++) {
+          const t0 = vs + (x / W) * len, t1 = vs + ((x + 1) / W) * len;
+          const i0 = Math.max(0, Math.floor(t0 / binDur));
+          if (i0 >= n) continue;
+          const i1 = Math.min(n, Math.max(Math.ceil(t1 / binDur), i0 + 1));
+          let p = 0;
+          for (let i = i0; i < i1; i++) if (wave.peaks[i] > p) p = wave.peaks[i];
+          const h = Math.max(1, Math.pow(p / waveMax, 0.7) * maxH);
+          ctx.fillStyle = keptMask[x] ? "rgba(61,186,132,0.9)" : "rgba(120,120,128,0.45)";
+          ctx.fillRect(x, midY - h, 1, h * 2);
+        }
+      }
+      if (hasDec) {
+        ctx.fillStyle = "rgba(232,213,163,0.18)";
+        for (const k of keeps()) {
+          const xa = tToX(k.sourceStart, W), xb = tToX(k.sourceEnd, W);
+          if (xa >= -2 && xa <= W + 2) ctx.fillRect(xa, stripH, 1, H - stripH);
+          if (xb >= -2 && xb <= W + 2) ctx.fillRect(xb, stripH, 1, H - stripH);
+        }
+        const sel = selected?.kind === "keep" ? currentItem() : null;
+        if (sel) {
+          ctx.fillStyle = "rgba(232,213,163,0.9)";
+          ctx.fillRect(tToX(sel.sourceStart, W) - 1, 0, 3, H);
+          ctx.fillRect(tToX(sel.sourceEnd, W) - 1, 0, 3, H);
+        }
+      }
+      if (media) {
+        const x = tToX(media.currentTime, W);
+        if (x >= -1 && x <= W + 1) {
+          ctx.fillStyle = "#fff";
+          ctx.fillRect(x - 0.5, 0, 1.5, H);
+        }
+      }
+    }
+
+    function hitEdge(x, W) {
+      if (!state?.hasDecisions || selected?.kind !== "keep") return null;
+      const item = currentItem();
+      if (!item) return null;
+      let best = null, bestDist = 8;
+      for (const side of ["sourceStart", "sourceEnd"]) {
+        const d = Math.abs(x - tToX(item[side], W));
+        if (d <= bestDist) { bestDist = d; best = { item, side }; }
+      }
+      return best;
+    }
+
+    function dragEdgeTo(t) {
+      const { item, side } = edgeDrag;
+      const ks = keeps();
+      const idx = ks.findIndex((k) => k === item);
+      const prev = ks[idx - 1], next = ks[idx + 1];
+      if (side === "sourceStart") {
+        const lo = prev ? prev.sourceEnd : 0;
+        item.sourceStart = round3(Math.max(lo, Math.min(item.sourceEnd - 0.04, t)));
+      } else {
+        const hi = next ? next.sourceStart : duration();
+        item.sourceEnd = round3(Math.max(item.sourceStart + 0.04, Math.min(hi, t)));
+      }
+      recomputeTimeline();
+      recomputeWordStatus();
+      renderStats();
+      drawWave();
+    }
+
+    /* ---------- playback ---------- */
+
+    function seek(t) {
+      if (media) media.currentTime = Math.max(0, t);
+    }
+
+    let audioCtx = null;
+    let cutGain = null;
+    let cutGainTarget = 1;
+    let cutGraphFailed = false;
+    let cutRaf = 0;
+    let cutSeekQueued = false;
+    let cutSeekGen = 0;
+    let cutSeekDest = null;
+    let selfSeek = false;
+
+    function ensureAudioGraph() {
+      if (!media || audioCtx || cutGraphFailed) return;
+      const Ctx = window.AudioContext || window.webkitAudioContext;
+      if (!Ctx) return;
+      try {
+        const ctx = new Ctx();
+        const src = ctx.createMediaElementSource(media);
+        const gain = ctx.createGain();
+        src.connect(gain);
+        gain.connect(ctx.destination);
+        audioCtx = ctx;
+        cutGain = gain;
+      } catch (err) {
+        cutGraphFailed = true;
+      }
+    }
+
+    function setCutGain(value) {
+      if (!cutGain || !audioCtx || cutGainTarget === value) return;
+      cutGainTarget = value;
+      const now = audioCtx.currentTime;
+      cutGain.gain.cancelScheduledValues(now);
+      cutGain.gain.setValueAtTime(cutGain.gain.value, now);
+      cutGain.gain.linearRampToValueAtTime(value, now + (value === 0 ? 0.004 : 0.01));
+    }
+
+    function setCutMuted(muted) {
+      if (media && media.muted !== muted) media.muted = muted;
+      setCutGain(muted ? 0 : 1);
+    }
+
+    function beginCutSeek(dest) {
+      if (cutSeekQueued && cutSeekDest != null && Math.abs(cutSeekDest - dest) < 0.02) return;
+      cutSeekDest = dest;
+      const token = ++cutSeekGen;
+      cutSeekQueued = true;
+      const step = () => {
+        if (!media || !cutMode || token !== cutSeekGen) return;
+        if (Math.abs(media.currentTime - dest) < 0.04 && !media.seeking) {
+          cutSeekQueued = false;
+          cutSeekDest = null;
+          return;
+        }
+        if (!media.seeking) {
+          selfSeek = true;
+          media.currentTime = dest;
+          requestAnimationFrame(() => { selfSeek = false; });
+        }
+        requestAnimationFrame(step);
+      };
+      step();
+    }
+
+    function unlockAudio() {
+      ensureAudioGraph();
+      if (audioCtx && audioCtx.state === "suspended") audioCtx.resume();
+    }
+
+    function cutAudio() {
+      if (!wave || !wave.peaks || !(wave.duration > 0)) return null;
+      return { peaks: wave.peaks, duration: wave.duration };
+    }
+
+    /* Play through the keep, including its last word. Mute only after the
+       cut, and keep that mute until the seek has landed in the next keep.
+       Seeking early skips the tail. A late seek without mute plays the drop. */
+    function applyCutPlanFromClock() {
+      if (!media) return;
+      if (!cutMode || !state?.hasDecisions) {
+        cutSeekGen++;
+        cutSeekQueued = false;
+        cutSeekDest = null;
+        setCutMuted(false);
+        return;
+      }
+      const plan = planCutAction(keeps(), media.currentTime, null, cutAudio());
+      if (plan.op === "play") {
+        if (!media.seeking) setCutMuted(false);
+        return false;
+      }
+      setCutMuted(true);
+      if (plan.op === "end") {
+        if (!media.paused) media.pause();
+        return false;
+      }
+      if (plan.op === "mute" || plan.at == null) return false;
+      beginCutSeek(plan.at + EPS);
+      return true;
+    }
+
+    function startCutWatch() {
+      if (cutRaf) return;
+      const loop = () => {
+        if (!media || media.paused) { cutRaf = 0; return; }
+        applyCutPlanFromClock();
+        cutRaf = requestAnimationFrame(loop);
+      };
+      cutRaf = requestAnimationFrame(loop);
+    }
+
+    function tick() {
+      if (!media) return;
+      if (playUntil != null && media.currentTime >= playUntil) {
+        media.pause();
+        playUntil = null;
+      }
+      if (applyCutPlanFromClock()) return;
+      $("clockSource").textContent = "源片 " + fmtMs(media.currentTime);
+      $("clockCut").textContent = "剪后 " + fmtMs(sourceToCut(media.currentTime).cut || 0);
+      highlightWord(media.currentTime);
+      if (!media.paused) {
+        const [vs, ve] = viewRange();
+        const len = ve - vs;
+        if (media.currentTime < vs + len * 0.05 || media.currentTime > ve - len * 0.05) {
+          setView(media.currentTime - len * 0.15, media.currentTime + len * 0.85);
+        }
+      }
+      drawWave();
+    }
+
+    function setMode(cut) {
+      cutMode = !!cut && !!state?.hasDecisions;
+      if (media && !media.paused) unlockAudio();
+      applyCutPlanFromClock();
+      if (media && !media.paused) startCutWatch();
+    }
+
+    const PLAY_RATES = [1, 1.1, 1.2, 1.3];
+    const RATE_KEY = "koubo-review-rate";
+    const SPLIT_KEY = "koubo-review-tx-width";
+
+    function currentRate() {
+      const n = Number($("playRate").value);
+      return PLAY_RATES.includes(n) ? n : 1;
+    }
+
+    function applyPlayRate() {
+      const n = currentRate();
+      $("playRate").value = String(n);
+      $("playRate").classList.toggle("fast", n !== 1);
+      if (media) {
+        media.playbackRate = n;
+        media.preservesPitch = true;
+      }
+    }
+
+    function applySplitWidth(px) {
+      const center = document.querySelector(".center");
+      const pane = $("txPane");
+      if (!center || !pane) return;
+      const total = center.clientWidth;
+      if (!(total > 0)) return;
+      const gutter = $("splitResizer").offsetWidth || 8;
+      const minTx = 240;
+      const minPreview = 280;
+      const max = Math.max(minTx, total - minPreview - gutter);
+      const w = Math.max(minTx, Math.min(max, px));
+      pane.style.flex = `0 0 ${Math.round(w)}px`;
+    }
+
+    function mountMedia() {
+      const box = $("playerBox");
+      box.innerHTML = "";
+      if (state.hasVideo) {
+        media = document.createElement("video");
+        media.controls = true;
+        media.src = "/media/source";
+      } else if (state.hasAudio) {
+        media = document.createElement("audio");
+        media.controls = true;
+        media.src = "/media/audio";
+      } else {
+        box.innerHTML = "<p class='empty'>没有可播放的源片或 wav。启动时带上 --source。</p>";
+        media = null;
+        return;
+      }
+      media.addEventListener("seeking", () => {
+        if (selfSeek) return;
+        cutSeekGen++;
+        cutSeekQueued = false;
+        cutSeekDest = null;
+      });
+      media.addEventListener("timeupdate", tick);
+      media.playbackRate = currentRate();
+      media.preservesPitch = true;
+      media.addEventListener("play", () => {
+        unlockAudio();
+        applyPlayRate();
+        applyCutPlanFromClock();
+        startCutWatch();
+      });
+      media.addEventListener("loadedmetadata", () => {
+        $("clockDur").textContent = "片长 " + fmt(media.duration);
+        renderStats();
+        recomputeWordStatus();
+        drawWave();
+      });
+      document.addEventListener("pointerdown", unlockAudio);
+      box.appendChild(media);
+    }
+
+    /* ---------- save ---------- */
+
+    async function save() {
+      if (!state?.hasDecisions) return;
+      const res = await fetch("/api/decisions", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(state.decisions),
+      });
+      const body = await res.json();
+      if (!body.ok) {
+        setStatus(body.error || "保存失败", "err");
+        return;
+      }
+      state.decisions = body.decisions;
+      selected = null;
+      dirty = false;
+      const logHint = body.reviewLog ? " · review_log" : "";
+      setStatus("已保存" + logHint, "ok");
+      refreshViews();
+    }
+
+    let exporting = false;
+
+    async function exportFile(kind) {
+      if (!state?.hasDecisions || exporting) return;
+      exporting = true;
+      $("exportXml").disabled = true;
+      $("exportSrt").disabled = true;
+      $("exportMp4").disabled = true;
+      setStatus(kind === "mp4" ? "先选择保存位置。确定后开始渲染…" : "选择保存位置…");
+      try {
+        const res = await fetch("/api/export/" + kind, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(state.decisions),
+        });
+        const streamed = (res.headers.get("content-type") || "").includes("ndjson");
+        const body = streamed ? await readExportEvents(res) : await res.json();
+        if (body.canceled) {
+          setStatus("已取消导出");
+          return;
+        }
+        if (body.decisions) {
+          state.decisions = body.decisions;
+          dirty = false;
+          refreshViews();
+        }
+        if (!body.ok) {
+          setStatus(body.error || "导出失败", "err");
+          return;
+        }
+        const count = body.count != null ? " · " + body.count + " 条" : "";
+        const left = unheardFlags();
+        const remind = left ? ` · 右侧还有 ${left} 处建议听没点开` : "";
+        setStatus("已导出 " + (body.path || body.name) + count + remind, "ok");
+      } catch (err) {
+        setStatus("导出失败", "err");
+      } finally {
+        exporting = false;
+        hideExportProgress();
+        $("exportXml").disabled = false;
+        $("exportSrt").disabled = false;
+        $("exportMp4").disabled = false;
+      }
+    }
+
+    /* ---------- events ---------- */
+
+    const txBox = $("transcript");
+
+    function endSelect() {
+      if (!selecting) return;
+      selecting = false;
+      txBox.classList.remove("selecting");
+      hideMarquee();
+      if (!selectDragged) {
+        const hit = document.elementFromPoint(selectStartX, selectStartY);
+        const gap = hit && hit.closest ? hit.closest(".gap") : null;
+        if (gap) {
+          const rec = gaps[Number(gap.dataset.g)];
+          clearSelection();
+          if (!rec) return;
+          selected = null;
+          selectedGap = rec.mark;
+          rec.el.classList.add("sel");
+          seek(rec.start + EPS);
+          playUntil = null;
+          renderEditor();
+          return;
+        }
+        const w = wordElAt(selectStartX, selectStartY);
+        if (w) {
+          seek(words[Number(w.dataset.i)].s + EPS);
+          playUntil = null;
+        }
+        clearSelection();
+        return;
+      }
+      applyMixedSelection();
+      clearSelection();
+    }
+
+    txBox.addEventListener("mousedown", (ev) => {
+      if (ev.button !== 0 || !state?.hasDecisions) return;
+      if (ev.target.closest(".ptime")) return;
+      if (selectedGap) {
+        selectedGap = null;
+        document.querySelectorAll(".gap.sel").forEach((el) => el.classList.remove("sel"));
+      }
+      ev.preventDefault();
+      hasTextSelection = false;
+      selecting = true;
+      selectDragged = false;
+      selectStartX = ev.clientX;
+      selectStartY = ev.clientY;
+      const gap = ev.target.closest(".gap");
+      const w = wordElAt(ev.clientX, ev.clientY);
+      selA = selB = w ? Number(w.dataset.i) : null;
+      selGaps = [];
+      if (gap) {
+        const rec = gaps[Number(gap.dataset.g)];
+        if (rec) selGaps = [rec];
+      }
+      document.querySelectorAll(".w.sel, .gap.sel").forEach((el) => el.classList.remove("sel"));
+      if (selA != null) updateSelClasses();
+      selGaps.forEach((g) => g.el.classList.add("sel"));
+      txBox.classList.add("selecting");
+      selectCaptureEl = txBox;
+      if (txBox.setPointerCapture && ev.pointerId != null) {
+        try { txBox.setPointerCapture(ev.pointerId); } catch (_) { /* ignore */ }
+      }
+    });
+    txBox.addEventListener("mouseover", (ev) => {
+      const el = ev.target.closest(".w");
+      if (el) hoverWord = Number(el.dataset.i);
+    });
+    txBox.addEventListener("mouseleave", () => { hoverWord = -1; });
+    document.addEventListener("mousedown", (ev) => {
+      if (ev.target.closest("#transcript")) return;
+      clearSelection();
+    });
+    const cv = $("wave");
+    function viewZoomed() {
+      const [vs, ve] = viewRange();
+      return ve - vs < duration() - 0.05;
+    }
+
+    cv.addEventListener("mousedown", (ev) => {
+      if (!media || ev.button !== 0) return;
+      const rect = cv.getBoundingClientRect();
+      const x = ev.clientX - rect.left;
+      const edge = hitEdge(x, rect.width);
+      if (edge) {
+        edgeDrag = edge;
+        return;
+      }
+      if (viewZoomed()) {
+        const [vs, ve] = viewRange();
+        wavePan = { x0: ev.clientX, clickX: x, vs, ve, moved: false };
+        ev.preventDefault();
+      } else {
+        scrubbing = true;
+        const t = xToT(x, rect.width);
+        seek(t);
+        selectSegmentAt(t + EPS);
+        tick();
+      }
+    });
+    cv.addEventListener("wheel", (ev) => {
+      ev.preventDefault();
+      const rect = cv.getBoundingClientRect();
+      const [vs, ve] = viewRange();
+      const len = ve - vs;
+      if (Math.abs(ev.deltaX) > Math.abs(ev.deltaY) || ev.shiftKey) {
+        const dt = (((ev.shiftKey ? ev.deltaY : ev.deltaX) || 0) / rect.width) * len;
+        setView(vs + dt, ve + dt);
+      } else {
+        const f = Math.exp(ev.deltaY * 0.0018);
+        const anchor = vs + ((ev.clientX - rect.left) / rect.width) * len;
+        setView(anchor - (anchor - vs) * f, anchor + (ve - anchor) * f);
+      }
+      drawWave();
+    }, { passive: false });
+    cv.addEventListener("dblclick", () => { view = { s: 0, e: 0 }; drawWave(); });
+    $("tlResizer").addEventListener("mousedown", (ev) => {
+      ev.preventDefault();
+      tlDrag = { y: ev.clientY, h: $("timelineBox").clientHeight };
+    });
+    $("splitResizer").addEventListener("mousedown", (ev) => {
+      if (ev.button !== 0) return;
+      ev.preventDefault();
+      splitDrag = { x: ev.clientX, w: $("txPane").getBoundingClientRect().width };
+      document.body.classList.add("splitting");
+    });
+    const zoomBy = (f) => {
+      const [vs, ve] = viewRange();
+      const t = media ? media.currentTime : -1;
+      const c = t >= vs && t <= ve ? t : (vs + ve) / 2;
+      const len = (ve - vs) * f;
+      setView(c - len / 2, c + len / 2);
+      drawWave();
+    };
+    $("zoomIn").onclick = () => zoomBy(0.6);
+    $("zoomOut").onclick = () => zoomBy(1 / 0.6);
+    $("zoomFit").onclick = () => { view = { s: 0, e: 0 }; drawWave(); };
+    window.addEventListener("mousemove", (ev) => {
+      if (splitDrag) {
+        applySplitWidth(splitDrag.w + (ev.clientX - splitDrag.x));
+        return;
+      }
+      if (selecting) {
+        if (Math.hypot(ev.clientX - selectStartX, ev.clientY - selectStartY) > 4) selectDragged = true;
+        if (selectDragged) {
+          updateMarquee(selectStartX, selectStartY, ev.clientX, ev.clientY);
+          syncSelectFromMarquee(ev.clientX, ev.clientY);
+        }
+      }
+      if (tlDrag) {
+        const h = Math.max(96, Math.min(360, tlDrag.h + (tlDrag.y - ev.clientY)));
+        document.querySelector(".app").style.gridTemplateRows = `auto 1fr ${h}px`;
+        drawWave();
+      } else if (wavePan) {
+        const dx = ev.clientX - wavePan.x0;
+        if (Math.abs(dx) >= 3) wavePan.moved = true;
+        if (!wavePan.moved) return;
+        const rect = cv.getBoundingClientRect();
+        const len = wavePan.ve - wavePan.vs;
+        const dt = -(dx / rect.width) * len;
+        setView(wavePan.vs + dt, wavePan.ve + dt);
+        cv.style.cursor = "grabbing";
+        drawWave();
+      } else if (scrubbing) {
+        const rect = cv.getBoundingClientRect();
+        seek(xToT(ev.clientX - rect.left, rect.width));
+        tick();
+      } else if (edgeDrag) {
+        const rect = cv.getBoundingClientRect();
+        dragEdgeTo(xToT(ev.clientX - rect.left, rect.width));
+      } else if (state?.hasDecisions) {
+        const rect = cv.getBoundingClientRect();
+        const x = ev.clientX - rect.left;
+        const onEdge = x >= 0 && x <= rect.width && ev.clientY >= rect.top && ev.clientY <= rect.bottom && hitEdge(x, rect.width);
+        cv.style.cursor = onEdge ? "col-resize" : (viewZoomed() ? "grab" : "crosshair");
+      }
+    });
+    window.addEventListener("mouseup", (ev) => {
+      if (selectCaptureEl && selectCaptureEl.releasePointerCapture && ev.pointerId != null) {
+        try { selectCaptureEl.releasePointerCapture(ev.pointerId); } catch (_) { /* ignore */ }
+      }
+      selectCaptureEl = null;
+      endSelect();
+      if (edgeDrag) {
+        dirty = true;
+        setStatus("未保存");
+        renderEditor();
+      }
+      if (wavePan && !wavePan.moved) {
+        const rect = cv.getBoundingClientRect();
+        const t = xToT(wavePan.clickX, rect.width);
+        seek(t);
+        selectSegmentAt(t + EPS);
+        tick();
+      }
+      if (splitDrag) {
+        try { localStorage.setItem(SPLIT_KEY, String(Math.round($("txPane").getBoundingClientRect().width))); } catch (_) { /* ignore */ }
+      }
+      scrubbing = false;
+      edgeDrag = null;
+      tlDrag = null;
+      wavePan = null;
+      splitDrag = null;
+      document.body.classList.remove("splitting");
+      if (viewZoomed()) cv.style.cursor = "grab";
+    });
+    window.addEventListener("resize", () => {
+      if ($("txPane").style.flex) applySplitWidth($("txPane").getBoundingClientRect().width);
+      drawWave();
+    });
+
+    $("playRate").onchange = () => {
+      applyPlayRate();
+      try { localStorage.setItem(RATE_KEY, String(currentRate())); } catch (_) { /* ignore */ }
+    };
+    $("save").onclick = save;
+    $("exportXml").onclick = () => exportFile("fcpxml");
+    $("exportSrt").onclick = () => exportFile("srt");
+    $("exportMp4").onclick = () => exportFile("mp4");
+
+    window.addEventListener("keydown", (ev) => {
+      if (ev.target.matches("input, textarea, select")) return;
+      if (ev.code === "Space") {
+        ev.preventDefault();
+        if (!media) return;
+        unlockAudio();
+        media.paused ? media.play() : media.pause();
+      } else if (ev.key === "[") nudge("start", ev.shiftKey ? -0.12 : -0.04);
+      else if (ev.key === "]") nudge("end", ev.shiftKey ? 0.12 : 0.04);
+      else if (ev.key === "Delete" || ev.key === "Backspace") {
+        if (hoverWord >= 0 && wordKept(hoverWord)) {
+          ev.preventDefault();
+          applyDelete(hoverWord, hoverWord);
+        } else toggleSelected();
+      } else if (ev.key === "r" || ev.key === "R") {
+        if (hoverWord >= 0 && !wordKept(hoverWord)) applyRestore(hoverWord, hoverWord);
+      } else if (ev.key === "d" || ev.key === "D") {
+        if (hoverWord >= 0) toggleWord(hoverWord);
+        else toggleSelected();
+      }
+      else if (ev.key === "s" || ev.key === "S") { ev.preventDefault(); save(); }
+      else if (ev.key === "Escape") clearSelection();
+    });
+    window.addEventListener("beforeunload", (ev) => {
+      if (dirty) ev.preventDefault();
+    });
+
+    /* ---------- init ---------- */
+
+    try {
+      const savedRate = localStorage.getItem(RATE_KEY);
+      if (savedRate && $("playRate").querySelector(`option[value="${savedRate}"]`)) $("playRate").value = savedRate;
+      applyPlayRate();
+      const savedSplit = Number(localStorage.getItem(SPLIT_KEY));
+      if (savedSplit > 0) requestAnimationFrame(() => applySplitWidth(savedSplit));
+    } catch (_) { /* ignore */ }
+
+    fetch("/api/state").then((r) => r.json()).then((s) => {
+      state = s;
+      mountMedia();
+      setMode(true);
+      renderTranscript();
+      renderEditor();
+      renderStats();
+      drawWave();
+      fetch("/api/waveform").then((r) => r.json()).then((w) => {
+        if (w && w.peaks) {
+          wave = w;
+          waveMax = w.peaks.reduce((m, x) => (x > m ? x : m), 0) || 1;
+          $("waveHint").textContent = "";
+          recomputeWordStatus();
+        } else {
+          $("waveHint").textContent = (w && w.error) || "无波形";
+        }
+        renderStats();
+        drawWave();
+      }).catch(() => { $("waveHint").textContent = "波形不可用"; });
+    }).catch((err) => setStatus(String(err), "err"));
+  </script>
+</body>
+</html>

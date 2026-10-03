@@ -1,0 +1,21 @@
+# 专名。一行一个；规则见 references/script-coverage.md
+Claude
+ClaudeCode
+Codex
+Cursor
+ChatGPT
+GPT
+Groq
+Grok
+Gemini
+DeepSeek
+Copilot
+WordBot
+GrooveBot
+达芬奇
+剪映
+FCPXML
+Learningbydoing
+Jev
+TypeSafe
+Jevable
