@@ -14,33 +14,25 @@
 
 ## 安装
 
-命令都在**仓库根目录**执行。Agent 要打开的是这个仓库：目录、命名和密钥约定看这份 README，做粗剪时读 `koubo-roughcut/SKILL.md`。脚本从仓库根目录找 `koubo-roughcut/.venv` 和 `.env`。
-
-装好之后，用检查命令确认。终端打印 `ok` 就可以开工。
-
-| 依赖 | 做什么 | 怎么确认 |
-|---|---|---|
-| ffmpeg、ffprobe | 抽音频、渲染成片 | `ffmpeg -version` 和 `ffprobe -version` 能打出版本 |
-| Python 3 | 跑 `koubo-roughcut/scripts/` | `python3 --version`。本仓库在 Python 3.13 上用过 |
-| 百炼 API Key | 把口播转成带时间的逐字稿 | 检查命令不再报缺少 `DASHSCOPE_API_KEY` |
-
-### 方法一：让 Agent 装环境
-
-把仓库地址发给 Agent。安装命令在方法二，提示词里不再写一遍。
+把这个仓库地址发给你的 coding agent，说一句「装一下」：
 
 ```text
-克隆 https://github.com/nextcaicai/A-Roll-Roughcut ，按 README 的方法二把环境装好。缺的工具直接安装，不要停下来问我。装完停下，不要开始剪视频。不要读取、打印或提交 .env 和任何密钥。
+https://github.com/nextcaicai/A-Roll-Roughcut
 ```
 
-百炼 Key 自己写进克隆下来的仓库根目录 `.env`，不要贴进对话。在[阿里云百炼的 API Key 说明](https://help.aliyun.com/zh/model-studio/get-api-key)里创建或复制，Key 以 `sk-` 开头。中国大陆的 Key 对应默认接入点 `https://dashscope.aliyuncs.com`。`.env` 已在 `.gitignore` 里：
+Agent 会读这份 README，装好 ffmpeg 和 Python 环境，再跑一遍检查。
+
+你要自己做的只有百炼 API Key。在[阿里云百炼的 API Key 说明](https://help.aliyun.com/zh/model-studio/get-api-key)里创建或复制，Key 以 `sk-` 开头。中国大陆的 Key 对应 `https://dashscope.aliyuncs.com`。装的时候 Agent 会让你把它写进仓库根目录的 `.env`，不要贴进对话：
 
 ```bash
 DASHSCOPE_API_KEY=sk-你的密钥
 ```
 
-Agent 回复里出现 `ok` 后即可开工。若它停在缺少 `DASHSCOPE_API_KEY`，把 Key 写进那个仓库的 `.env`，再让它只重跑检查命令。
+检查通过后会看到 `ok`。
 
-### 方法二：自己装
+### 自己装
+
+命令在仓库根目录执行。
 
 **1. 安装 ffmpeg**
 
@@ -54,7 +46,13 @@ brew install ffmpeg
 
 **2. 写入百炼 API Key**
 
-写法与方法一相同：仓库根目录 `.env` 里一行 `DASHSCOPE_API_KEY=sk-你的密钥`。也可以只给当前终端：
+仓库根目录 `.env`：
+
+```bash
+DASHSCOPE_API_KEY=sk-你的密钥
+```
+
+也可以只给当前终端：
 
 ```bash
 export DASHSCOPE_API_KEY=sk-你的密钥
