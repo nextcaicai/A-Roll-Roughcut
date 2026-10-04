@@ -26,26 +26,19 @@
 
 ### 方法一：让 Agent 装环境
 
-Key 自己写进仓库根目录的 `.env`，不要贴进对话。在[阿里云百炼的 API Key 说明](https://help.aliyun.com/zh/model-studio/get-api-key)里创建或复制，Key 以 `sk-` 开头。中国大陆的 Key 对应默认接入点 `https://dashscope.aliyuncs.com`。`.env` 已在 `.gitignore` 里：
+把仓库地址发给 Agent。安装命令在方法二，提示词里不再写一遍。
+
+```text
+克隆 https://github.com/nextcaicai/A-Roll-Roughcut ，按 README 的方法二把环境装好。缺的工具直接安装，不要停下来问我。装完停下，不要开始剪视频。不要读取、打印或提交 .env 和任何密钥。
+```
+
+百炼 Key 自己写进克隆下来的仓库根目录 `.env`，不要贴进对话。在[阿里云百炼的 API Key 说明](https://help.aliyun.com/zh/model-studio/get-api-key)里创建或复制，Key 以 `sk-` 开头。中国大陆的 Key 对应默认接入点 `https://dashscope.aliyuncs.com`。`.env` 已在 `.gitignore` 里：
 
 ```bash
 DASHSCOPE_API_KEY=sk-你的密钥
 ```
 
-写好后，把下面这段发给已经打开本仓库的 Agent：
-
-```text
-把这个仓库的口播粗剪环境装好，装完停下，不要开始剪视频。缺什么就装什么，不要停下来问我要不要装。
-
-- ffmpeg 或 ffprobe 不在 PATH 里就直接安装。macOS 用 Homebrew：brew install ffmpeg。这台机器还没有 Homebrew 时，先装 Homebrew，再装 ffmpeg
-- 用 python3 在 koubo-roughcut/.venv 创建虚拟环境
-- 只用这个 venv 的 python 安装 koubo-roughcut/scripts/requirements.txt
-- 跑 koubo-roughcut/.venv/bin/python koubo-roughcut/scripts/setup_check.py，把结果告诉我
-- 不要读取、打印或提交 .env 和任何密钥
-- 不要修改源视频、脚本、成片目录，也不要删除无关文件
-```
-
-Agent 回复里出现 `ok` 后即可开工。若它停在缺少 `DASHSCOPE_API_KEY`，把上面的 `.env` 写好，再让它只重跑检查命令。
+Agent 回复里出现 `ok` 后即可开工。若它停在缺少 `DASHSCOPE_API_KEY`，把 Key 写进那个仓库的 `.env`，再让它只重跑检查命令。
 
 ### 方法二：自己装
 
