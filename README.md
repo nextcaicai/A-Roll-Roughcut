@@ -35,9 +35,9 @@ DASHSCOPE_API_KEY=sk-你的密钥
 写好后，把下面这段发给已经打开本仓库的 Agent：
 
 ```text
-把这个仓库的口播粗剪环境装好，装完停下，不要开始剪视频。
+把这个仓库的口播粗剪环境装好，装完停下，不要开始剪视频。缺什么就装什么，不要停下来问我要不要装。
 
-- 确认 ffmpeg 和 ffprobe 已在 PATH 里。没有就告诉我系统对应的安装方式，然后停下
+- ffmpeg 或 ffprobe 不在 PATH 里就直接安装。macOS 用 Homebrew：brew install ffmpeg。这台机器还没有 Homebrew 时，先装 Homebrew，再装 ffmpeg
 - 用 python3 在 .agents/skills/koubo-roughcut/.venv 创建虚拟环境
 - 只用这个 venv 的 python 安装 .agents/skills/koubo-roughcut/scripts/requirements.txt
 - 跑 .agents/skills/koubo-roughcut/.venv/bin/python .agents/skills/koubo-roughcut/scripts/setup_check.py，把结果告诉我
