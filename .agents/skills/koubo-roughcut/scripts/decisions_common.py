@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import re
+from pathlib import Path
 
 PUNCT_RE = re.compile(r"[\s，。！？、；：,.!?;:\"'「」『』（）()\[\]【】—\-…]+")
 _ID_NUM = re.compile(r"^([kdf])(\d+)$")
@@ -10,6 +11,21 @@ REASONS = frozenset({"speech", "breath", "retake", "stutter", "long-pause", "unc
 OVERLAP_TOL = 0.02
 TOUCH_TOL = 0.05
 PIPELINE_SNAPSHOT = "cut_decisions.pipeline.json"
+
+
+def workspace_root() -> Path:
+    """Directory that holds .env and the film folders.
+
+    The skill lives at <root>/koubo-roughcut or <root>/.agents/skills/koubo-roughcut.
+    """
+    skill_root = Path(__file__).resolve().parent.parent
+    container = skill_root.parent
+    if container.name == "skills" and container.parent.name == ".agents":
+        return container.parent.parent
+    for candidate in (skill_root, *skill_root.parents):
+        if (candidate / ".git").exists():
+            return candidate
+    return container
 
 
 def next_item_id(prefix: str, items: list[dict]) -> str:

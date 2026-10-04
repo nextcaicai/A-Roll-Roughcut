@@ -17,14 +17,14 @@ from urllib.parse import urlparse
 
 from datetime import datetime, timezone
 
-from decisions_common import PIPELINE_SNAPSHOT, decisions_problems, fill_decision_text
+from decisions_common import PIPELINE_SNAPSHOT, decisions_problems, fill_decision_text, workspace_root
 from export_fcpxml import probe, write_fcpxml
 from render_roughcut import render_mp4
 from export_srt import render_srt, resolve_script
 from review_log import build_review_log, load_words, write_review_log
 
 SCRIPTS_DIR = Path(__file__).resolve().parent
-REPO_ROOT = SCRIPTS_DIR.parent.parent
+REPO_ROOT = workspace_root()
 EXPORT_DIR_FILE = REPO_ROOT / ".export-dir"
 RANGE_RE = re.compile(r"bytes=(\d*)-(\d*)")
 CHOOSE_FILE_SCRIPT = """

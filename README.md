@@ -2,7 +2,7 @@
 
 把口播里的重说和卡顿剪掉，留下句间该留的气口，再由人听一遍定稿。定稿后可以导出按剪后时间对齐的字幕，以及一条给剪映用的成片。
 
-你准备源视频和口播稿。在 Cursor、Claude Code 或 Codex 里打开这个仓库，Agent 按 [koubo-roughcut/SKILL.md](koubo-roughcut/SKILL.md) 做转写、对照和取舍。切口写在 `cut_decisions.json` 里，人在浏览器里改。
+你准备源视频和口播稿。在 Cursor、Claude Code 或 Codex 里打开这个仓库，Agent 按 [.agents/skills/koubo-roughcut/SKILL.md](.agents/skills/koubo-roughcut/SKILL.md) 做转写、对照和取舍。切口写在 `cut_decisions.json` 里，人在浏览器里改。
 
 ## 能完成什么
 
@@ -14,14 +14,14 @@
 
 ## 安装
 
-命令都在**仓库根目录**执行。Agent 要打开的是这个仓库：目录、命名和密钥约定看这份 README，做粗剪时读 `koubo-roughcut/SKILL.md`。脚本从仓库根目录找 `koubo-roughcut/.venv` 和 `.env`。
+命令都在**仓库根目录**执行。Agent 要打开的是这个仓库：目录、命名和密钥约定看这份 README，做粗剪时读 `.agents/skills/koubo-roughcut/SKILL.md`。脚本从仓库根目录找 `.agents/skills/koubo-roughcut/.venv` 和 `.env`。
 
 装好之后，用检查命令确认。终端打印 `ok` 就可以开工。
 
 | 依赖 | 做什么 | 怎么确认 |
 |---|---|---|
 | ffmpeg、ffprobe | 抽音频、渲染成片 | `ffmpeg -version` 和 `ffprobe -version` 能打出版本 |
-| Python 3 | 跑 `koubo-roughcut/scripts/` | `python3 --version`。本仓库在 Python 3.13 上用过 |
+| Python 3 | 跑 `.agents/skills/koubo-roughcut/scripts/` | `python3 --version`。本仓库在 Python 3.13 上用过 |
 | 百炼 API Key | 把口播转成带时间的逐字稿 | 检查命令不再报缺少 `DASHSCOPE_API_KEY` |
 
 ### 方法一：让 Agent 装环境
@@ -38,9 +38,9 @@ DASHSCOPE_API_KEY=sk-你的密钥
 把这个仓库的口播粗剪环境装好，装完停下，不要开始剪视频。
 
 - 确认 ffmpeg 和 ffprobe 已在 PATH 里。没有就告诉我系统对应的安装方式，然后停下
-- 用 python3 在 koubo-roughcut/.venv 创建虚拟环境
-- 只用这个 venv 的 python 安装 koubo-roughcut/scripts/requirements.txt
-- 跑 koubo-roughcut/.venv/bin/python koubo-roughcut/scripts/setup_check.py，把结果告诉我
+- 用 python3 在 .agents/skills/koubo-roughcut/.venv 创建虚拟环境
+- 只用这个 venv 的 python 安装 .agents/skills/koubo-roughcut/scripts/requirements.txt
+- 跑 .agents/skills/koubo-roughcut/.venv/bin/python .agents/skills/koubo-roughcut/scripts/setup_check.py，把结果告诉我
 - 不要读取、打印或提交 .env 和任何密钥
 - 不要修改源视频、脚本、成片目录，也不要删除无关文件
 ```
@@ -72,8 +72,8 @@ export DASHSCOPE_API_KEY=sk-你的密钥
 **3. 建立 Python 环境并安装依赖**
 
 ```bash
-python3 -m venv koubo-roughcut/.venv
-koubo-roughcut/.venv/bin/python -m pip install -r koubo-roughcut/scripts/requirements.txt
+python3 -m venv .agents/skills/koubo-roughcut/.venv
+.agents/skills/koubo-roughcut/.venv/bin/python -m pip install -r .agents/skills/koubo-roughcut/scripts/requirements.txt
 ```
 
 `.venv` 不进 git，每台机器自己建一份。
@@ -81,7 +81,7 @@ koubo-roughcut/.venv/bin/python -m pip install -r koubo-roughcut/scripts/require
 **4. 检查**
 
 ```bash
-koubo-roughcut/.venv/bin/python koubo-roughcut/scripts/setup_check.py
+.agents/skills/koubo-roughcut/.venv/bin/python .agents/skills/koubo-roughcut/scripts/setup_check.py
 ```
 
 打印 `ok` 即完成。缺工具、缺包或缺 Key 时，会列出缺的名字。
@@ -115,15 +115,15 @@ koubo-roughcut/.venv/bin/python koubo-roughcut/scripts/setup_check.py
 
 | 路径 | 放什么 |
 |---|---|
-| `koubo-roughcut/` | 粗剪 skill |
-| `koubo-roughcut/scripts/` | 转写、校验、审片、导出 |
+| `.agents/skills/koubo-roughcut/` | 粗剪 skill |
+| `.agents/skills/koubo-roughcut/scripts/` | 转写、校验、审片、导出 |
 | `<成片名>/脚本.md` | 口播稿 |
 | `<成片名>/` 里的源视频 | 原文件，不改名 |
 | `<成片名>/runs/<日期>/` | 这一次粗剪的产出 |
 
 ## 文档以哪份为准
 
-安装和开工看这份 README。剪的步骤、取舍和交付物以 [koubo-roughcut/SKILL.md](koubo-roughcut/SKILL.md) 为准。规则为什么改，记在 [koubo-roughcut/note.md](koubo-roughcut/note.md)。
+安装和开工看这份 README。剪的步骤、取舍和交付物以 [.agents/skills/koubo-roughcut/SKILL.md](.agents/skills/koubo-roughcut/SKILL.md) 为准。规则为什么改，记在 [.agents/skills/koubo-roughcut/note.md](.agents/skills/koubo-roughcut/note.md)。
 
 ## 许可
 

@@ -12,10 +12,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from decisions_common import normalize_zh
+from decisions_common import normalize_zh, workspace_root
 
 SCRIPTS_DIR = Path(__file__).resolve().parent
-REPO_ROOT = SCRIPTS_DIR.parent.parent
+REPO_ROOT = workspace_root()
 SKIP_PARTS = {".git", ".venv", "node_modules"}
 
 

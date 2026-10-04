@@ -17,8 +17,9 @@ import time
 import uuid
 from pathlib import Path
 
+from decisions_common import workspace_root
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
+REPO_ROOT = workspace_root()
 DEFAULT_MODEL = "paraformer-v2"
 DEFAULT_BASE_URL = "https://dashscope.aliyuncs.com/api/v1"
 DOUBAO_RESOURCE_ID = "volc.seedasr.auc"

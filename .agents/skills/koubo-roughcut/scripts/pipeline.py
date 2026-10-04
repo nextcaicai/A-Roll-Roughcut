@@ -17,12 +17,13 @@ from decisions_common import (
     decisions_problems,
     fill_decision_text,
     prune_orphaned_empty_keeps,
+    workspace_root,
 )
 from review_log import load_words
 from run_summary import build_run_summary, write_run_summary
 
 SCRIPTS_DIR = Path(__file__).resolve().parent
-REPO_ROOT = SCRIPTS_DIR.parent.parent
+REPO_ROOT = workspace_root()
 STEPS = ("breath", "stutter", "coverage", "residue")
 STEP_LABELS = {
     "breath": "气口压缝 + 入点回退",
