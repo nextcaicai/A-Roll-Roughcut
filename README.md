@@ -124,3 +124,7 @@ koubo-roughcut/.venv/bin/python koubo-roughcut/scripts/setup_check.py
 ## 文档以哪份为准
 
 安装和开工看这份 README。剪的步骤、取舍和交付物以 [koubo-roughcut/SKILL.md](koubo-roughcut/SKILL.md) 为准。规则为什么改，记在 [koubo-roughcut/note.md](koubo-roughcut/note.md)。
+
+## 许可
+
+[MIT](LICENSE)
