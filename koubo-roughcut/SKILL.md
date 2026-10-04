@@ -26,13 +26,13 @@ version: 0.12.7
 
 片内目录约定见仓库根目录 `README.md`。
 
-机械步骤必须跑 `.agents/skills/koubo-roughcut/scripts/`，不要现场拼 ffmpeg 或手写 XML。模型做修字、对照、取舍、残留复查。修字落盘用脚本，不许手改时间戳。
+机械步骤必须跑 `koubo-roughcut/scripts/`，不要现场拼 ffmpeg 或手写 XML。模型做修字、对照、取舍、残留复查。修字落盘用脚本，不许手改时间戳。
 
-脚本一律用 `.agents/skills/koubo-roughcut/.venv/bin/python`（不要用系统 python）。本机第一次：
+脚本一律用 `koubo-roughcut/.venv/bin/python`（不要用系统 python）。本机第一次：
 
 ```bash
-.agents/skills/koubo-roughcut/.venv/bin/python .agents/skills/koubo-roughcut/scripts/setup_check.py
-# 缺包：.agents/skills/koubo-roughcut/.venv/bin/python -m pip install -r .agents/skills/koubo-roughcut/scripts/requirements.txt
+koubo-roughcut/.venv/bin/python koubo-roughcut/scripts/setup_check.py
+# 缺包：koubo-roughcut/.venv/bin/python -m pip install -r koubo-roughcut/scripts/requirements.txt
 ```
 
 转写要 `DASHSCOPE_API_KEY`（环境变量或仓库根目录 `.env`，不要提交）。缺 ffmpeg 或缺 key 先补，不要改脚本去绕开。`paraformer-v2` 暂时用不了就停下来告诉用户。不要改用 realtime 模型，也不要启用本地 Whisper。
@@ -57,7 +57,7 @@ version: 0.12.7
 
 ## 步骤
 
-`PY=.agents/skills/koubo-roughcut/.venv/bin/python`，`SCRIPTS=.agents/skills/koubo-roughcut/scripts`，`OUT=<成片名>/runs/<日期>`，`TR=$OUT/transcript.corrected.json`。
+`PY=koubo-roughcut/.venv/bin/python`，`SCRIPTS=koubo-roughcut/scripts`，`OUT=<成片名>/runs/<日期>`，`TR=$OUT/transcript.corrected.json`。
 
 | 步 | 谁做 | 产出 |
 |---|---|---|
