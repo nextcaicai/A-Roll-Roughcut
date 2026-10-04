@@ -1,6 +1,6 @@
 # 口播粗剪
 
-把口播里的重说和卡顿剪掉，留下句间该留的气口，再由人听一遍定稿。定稿后可以导出给达芬奇的 FCPXML，或给剪映用的字幕和成片。
+把口播里的重说和卡顿剪掉，留下句间该留的气口，再由人听一遍定稿。定稿后可以导出按剪后时间对齐的字幕，以及一条给剪映用的成片。
 
 你准备源视频和口播稿。在 Cursor、Claude Code 或 Codex 里打开这个仓库，Agent 按 [koubo-roughcut/SKILL.md](koubo-roughcut/SKILL.md) 做转写、对照和取舍。切口写在 `cut_decisions.json` 里，人在浏览器里改。
 
@@ -9,7 +9,6 @@
 - 划掉失败开头和整段重说，句间换气留下
 - 浏览器里直接听剪后效果，恢复误删或再删一句
 - 导出按剪后时间对齐的 SRT，以及一条固定帧率 mp4
-- 要精剪时，导出 FCPXML 到达芬奇
 
 这一轮停在粗剪定稿。B-roll、音效、剪映草稿留到后面。
 
@@ -94,7 +93,6 @@ koubo-roughcut/.venv/bin/python koubo-roughcut/scripts/setup_check.py
 3. 在同一目录写 `脚本.md`。
 4. 对 Agent 说：按口播粗剪，给「如何学习AI？」做第一轮粗剪。
 5. 浏览器会打开审片页，地址是 `http://127.0.0.1:8765/`。打开就是剪后播放，倍速可以选 1.0、1.1、1.2、1.3。听完在页面上改切口，再导出字幕或成片。导出前先保存。
-6. 要进达芬奇时，对 Agent 说导出 FCPXML。
 
 暂时没有口播稿也可以开工。Agent 会按口播本身去掉重复，并说明这次没有对过稿。
 
@@ -109,7 +107,7 @@ koubo-roughcut/.venv/bin/python koubo-roughcut/scripts/setup_check.py
 - 默认把本地音频交给阿里云百炼做录音文件识别。脚本访问 `https://dashscope.aliyuncs.com/api/v1` 申请上传、提交任务、取回逐字稿；音频文件传到百炼返回的临时地址。
 - 只有你明确指定豆包时，才会请求 `https://openspeech.bytedance.com`。这一路要求音频本身已经是豆包服务能下载的地址。
 
-密钥只放在环境变量或仓库根目录 `.env`。不要写进代码、skill、提交或审片记录。源视频、`.venv`、临时 wav、粗剪 mp4、导出的 FCPXML 不进 git。
+密钥只放在环境变量或仓库根目录 `.env`。不要写进代码、skill、提交或审片记录。源视频、`.venv`、临时 wav、粗剪 mp4 不进 git。
 
 仓库里没有单独的统计上报，也没有作者自己的服务器。换百炼地域时，可以设置 `DASHSCOPE_HTTP_BASE_URL`，未设置则使用上面的中国大陆接入点。
 
