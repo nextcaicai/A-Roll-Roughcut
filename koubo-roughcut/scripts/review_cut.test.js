@@ -2,7 +2,7 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
-const { planCutAction, silenceCuts, silenceMarks, detectSilences, silenceLabel, pauseDeleteIntervals } = require("./review_cut.js");
+const { planCutAction, silenceCuts, silenceMarks, voiceMarks, detectSilences, silenceLabel, silenceTitle, pauseDeleteIntervals } = require("./review_cut.js");
 
 test("200ms into a deleted sentence still jumps to the next keep", () => {
   const keeps = [
@@ -205,12 +205,70 @@ test("a word that already keeps its tail is not shielded inside the pause", () =
   assert.deepEqual(pauseDeleteIntervals(1.5, 2.1, words, keeps), [[1.5, 2.1]]);
 });
 
+test("speech with no word is a restorable voice mark", () => {
+  const words = [
+    { s: 1, e: 1.2 },
+    { s: 4.2, e: 4.5 },
+  ];
+  const keeps = [
+    { sourceStart: 0, sourceEnd: 1.2 },
+    { sourceStart: 3.8, sourceEnd: 4.2 },
+    { sourceStart: 4.2, sourceEnd: 6 },
+  ];
+  const drops = [{ id: "d1", sourceStart: 1.2, sourceEnd: 3.8, reason: "long-pause" }];
+  const peaks = Array(80).fill(0);
+  for (let i = 12; i < 16; i++) peaks[i] = 0.6;
+  const marks = voiceMarks(words, keeps, peaks, 8, { drops });
+  assert.equal(marks.length, 1);
+  assert.equal(marks[0].kind, "voice");
+  assert.equal(marks[0].role, "cut");
+  assert.ok(marks[0].start >= 1.2 - 0.001);
+  assert.ok(marks[0].seconds >= 0.3);
+  assert.match(silenceLabel(marks[0]), /^\[声/);
+  assert.match(silenceTitle(marks[0]), /有声无字/);
+});
+
+test("room tone and the tail of a deleted take are not voice marks", () => {
+  const words = [{ s: 1, e: 1.2 }, { s: 5, e: 5.4 }];
+  const keeps = [
+    { sourceStart: 0, sourceEnd: 1.2 },
+    { sourceStart: 4.88, sourceEnd: 5 },
+    { sourceStart: 5, sourceEnd: 6 },
+  ];
+  const quiet = voiceMarks(words, keeps, Array(80).fill(0.04), 8, {
+    drops: [{ sourceStart: 1.2, sourceEnd: 4.88, reason: "long-pause" }],
+  });
+  assert.equal(quiet.length, 0);
+  const peaks = Array(80).fill(0);
+  for (let i = 30; i < 34; i++) peaks[i] = 0.7;
+  const tail = voiceMarks(words, keeps, peaks, 8, {
+    drops: [{ sourceStart: 1.2, sourceEnd: 3, reason: "retake" }],
+  });
+  assert.equal(tail.length, 0);
+});
+
+test("voice already inside a keep can be struck again", () => {
+  const words = [{ s: 1, e: 1.2 }, { s: 4, e: 4.4 }];
+  const keeps = [
+    { sourceStart: 0, sourceEnd: 1.2 },
+    { sourceStart: 1.2, sourceEnd: 1.6 },
+    { sourceStart: 3.6, sourceEnd: 4.4 },
+  ];
+  const peaks = Array(80).fill(0);
+  for (let i = 12; i < 16; i++) peaks[i] = 0.6;
+  const marks = voiceMarks(words, keeps, peaks, 8, { drops: [] });
+  assert.equal(marks.length, 1);
+  assert.equal(marks[0].role, "kept");
+  assert.equal(marks[0].kind, "voice");
+});
+
 test("review panel applies the cut plan every frame and shows silence cuts", () => {
   const html = fs.readFileSync(path.join(__dirname, "review.html"), "utf8");
   assert.match(html, /planCutAction\(/);
   assert.match(html, /requestAnimationFrame/);
   assert.match(html, /createMediaElementSource/);
   assert.match(html, /silenceMarks\(/);
+  assert.match(html, /voiceMarks\(/);
   assert.match(html, /silenceCuts\(/);
   assert.match(html, /pauseDeleteIntervals\(/);
   assert.match(html, /applyMixedSelection\(/);

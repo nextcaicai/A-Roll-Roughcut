@@ -1,0 +1,26 @@
+# 常见听写错误。一行一条：左边是连续的词，右边是改法，用 => 分开。
+# 左右词数必须一样。标点留在原词上，不写进这张表。
+# 单个字、以及本身能当正常词的（group、cloud、基因），不要写进来，留给模型。
+
+初 检 => 粗 剪
+check out => Chat Cut
+必 落 => B- roll
+白 练 => 百 炼
+剪 易 => 剪 映
+七 口 => 气 口
+构 解 => 口 剪
+whisper => Whisper
+json => JSON
+cursor => Cursor
+curser => Cursor
+codex => Codex
+api => API
+skill => Skill
+微 令 => We Link
+clou bot => Claw bot
+clou book => Claw bot
+I 令 => i link
+op点 => Obsidian
+vote => Vault
+vicoding => VibeCoding
+nonstore => Nutstore

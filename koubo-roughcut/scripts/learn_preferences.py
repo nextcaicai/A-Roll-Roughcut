@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""SKILL step 8: gather review diffs so a human can confirm preference rules.
+"""SKILL step 7: gather review diffs so a human can confirm preference rules.
 
 Writes preference_candidates.md. Does not write references/.
 """
@@ -12,10 +12,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from decisions_common import normalize_zh, workspace_root
+from decisions_common import normalize_zh
 
 SCRIPTS_DIR = Path(__file__).resolve().parent
-REPO_ROOT = workspace_root()
+REPO_ROOT = SCRIPTS_DIR.parent.parent
 SKIP_PARTS = {".git", ".venv", "node_modules"}
 
 
@@ -209,7 +209,7 @@ def main() -> int:
         run = args.run.expanduser().resolve()
         log = run / "review_log.json"
         if not log.is_file():
-            print(f"没有 {log}。先做完第 7 步审片保存。", file=__import__("sys").stderr)
+            print(f"没有 {log}。先做完第 6 步审片保存。", file=__import__("sys").stderr)
             return 1
         paths = [log]
         default_out = run / "preference_candidates.md"

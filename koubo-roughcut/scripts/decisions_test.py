@@ -9,11 +9,12 @@ from pathlib import Path
 import apply_word_stutter as stutter
 import retake_candidates as rc
 import scan_retake_residue as residue
-from compress_breath import apply_compress_breath, compress_keep_words
+from compress_breath import VOICE_NOTE, apply_compress_breath, compress_keep_words, sync_voice_review
 from decisions_common import (
     apply_lead_in,
     decisions_problems,
     fill_decision_text,
+    materialize_keeps,
     prune_orphaned_empty_keeps,
     recompute_timeline,
 )
@@ -42,6 +43,15 @@ def decisions(keep, drop=(), lead_in=0.12):
 
 def spans(data, key="keep"):
     return [(item["sourceStart"], item["sourceEnd"]) for item in sorted(data[key], key=lambda x: x["sourceStart"])]
+
+
+def loud_peaks(duration, spans, step=0.05):
+    n = int(round(duration / step))
+    peaks = [0.0] * n
+    for start, end in spans:
+        for i in range(max(0, int(start / step)), min(n, int(round(end / step)))):
+            peaks[i] = 0.6
+    return peaks
 
 
 class Validation(unittest.TestCase):
@@ -114,6 +124,49 @@ class Breath(unittest.TestCase):
         self.assertEqual(spans(data, "drop"), [(1, 2.6)])
         self.assertAlmostEqual(data["keep"][-1]["timelineEnd"], 2.4)
 
+    def test_word_head_pad_is_kept_in_front_of_the_first_word(self):
+        data = decisions([(0, 3, "speech")])
+        apply_compress_breath(data, [(1.0, 2.0)])
+        breaths = [item for item in data["keep"] if item["reason"] == "breath"]
+        self.assertEqual(len(breaths), 1)
+        self.assertAlmostEqual(breaths[0]["sourceStart"], 0.88)
+        self.assertAlmostEqual(breaths[0]["sourceEnd"], 1.0)
+        self.assertIn((0.0, 0.88), spans(data, "drop"))
+        self.assertEqual(decisions_problems(data)[0], [])
+
+    def test_gap_between_keeps_uses_the_same_breath(self):
+        data = decisions([(0, 1, "speech"), (3, 4, "speech")])
+        apply_compress_breath(data, [(0.0, 1.0), (3.0, 4.0)])
+        breaths = [item for item in data["keep"] if item["reason"] == "breath"]
+        self.assertEqual([(b["sourceStart"], b["sourceEnd"]) for b in breaths], [(2.6, 3.0)])
+        self.assertIn((1.0, 2.6), spans(data, "drop"))
+        self.assertEqual(decisions_problems(data)[0], [])
+
+    def test_short_gap_between_keeps_stays_whole(self):
+        data = decisions([(0, 1, "speech"), (1.2, 2, "speech")])
+        apply_compress_breath(data, [(0.0, 1.0), (1.2, 2.0)])
+        breaths = [item for item in data["keep"] if item["reason"] == "breath"]
+        self.assertEqual([(b["sourceStart"], b["sourceEnd"]) for b in breaths], [(1.0, 1.2)])
+        self.assertEqual(spans(data, "drop"), [])
+
+    def test_pad_after_a_content_cut_stops_at_the_drop(self):
+        data = decisions([(0, 1, "speech"), (5, 6, "speech")], [(1, 3, "retake")])
+        apply_compress_breath(data, [(0.0, 1.0), (5.0, 6.0)])
+        breaths = [item for item in data["keep"] if item["reason"] == "breath"]
+        self.assertEqual([(b["sourceStart"], b["sourceEnd"]) for b in breaths], [(4.88, 5.0)])
+        self.assertIn((1.0, 3.0), spans(data, "drop"))
+        self.assertIn((3.0, 4.88), spans(data, "drop"))
+        self.assertEqual(decisions_problems(data)[0], [])
+
+    def test_breath_pass_does_not_stack(self):
+        data = decisions([(0, 1, "speech"), (3, 4, "speech")])
+        words = [(0.0, 1.0), (3.0, 4.0)]
+        apply_compress_breath(data, words)
+        once = spans(data)
+        apply_compress_breath(data, words)
+        self.assertEqual(spans(data), once)
+        self.assertEqual(decisions_problems(data)[0], [])
+
     def test_apply_writes_long_pause_and_shortens_timeline(self):
         data = decisions([(0, 4, "speech")])
         apply_compress_breath(data, [(0.0, 1.0), (3.0, 4.0)])
@@ -122,6 +175,70 @@ class Breath(unittest.TestCase):
         self.assertEqual(data["drop"][0]["reason"], "long-pause")
         self.assertAlmostEqual(data["keep"][-1]["timelineEnd"], 2.4)
         self.assertEqual(decisions_problems(data), ([], []))
+
+    def test_speech_without_a_word_stays_in_the_keep(self):
+        data = decisions([(0, 4, "speech")])
+        words = [(0.0, 1.0), (3.0, 4.0)]
+        peaks = loud_peaks(4, [(1.0, 1.4)])
+        apply_compress_breath(data, words, peaks, 4)
+        self.assertIn((1.0, 1.4), spans(data))
+        self.assertTrue(any(item.get("untranscribed") for item in data["keep"]))
+        self.assertEqual(data["flags"][0]["note"], VOICE_NOTE)
+        self.assertEqual(data["flags"][0]["sourceStart"], 1.0)
+        self.assertTrue(any(abs(a - 1.4) < 0.02 and abs(b - 2.6) < 0.02 for a, b in spans(data, "drop")))
+        self.assertEqual(decisions_problems(data)[0], [])
+        once = spans(data)
+        apply_compress_breath(data, words, peaks, 4)
+        self.assertEqual(spans(data), once)
+        self.assertEqual(len(data["flags"]), 1)
+        self.assertEqual(decisions_problems(data)[0], [])
+
+    def test_a_short_dip_inside_untranscribed_speech_stays_one_span(self):
+        data = decisions([(0, 4, "speech")])
+        peaks = [0.0] * 400
+        for i in range(100, 115):
+            peaks[i] = 0.6
+        for i in range(124, 145):
+            peaks[i] = 0.6
+        apply_compress_breath(data, [(0.0, 1.0), (3.0, 4.0)], peaks, 4)
+        self.assertTrue(any(a <= 1.01 and b >= 1.44 for a, b in spans(data)))
+        self.assertEqual(len([item for item in data["keep"] if item.get("untranscribed")]), 1)
+        self.assertEqual(decisions_problems(data)[0], [])
+
+    def test_room_tone_is_still_a_long_pause(self):
+        data = decisions([(0, 4, "speech")])
+        apply_compress_breath(data, [(0.0, 1.0), (3.0, 4.0)], [0.04] * 80, 4)
+        self.assertEqual(spans(data), [(0, 1), (2.6, 3), (3, 4)])
+        self.assertEqual(data["flags"], [])
+
+    def test_voice_after_a_content_cut_stays_cut(self):
+        data = decisions([(0, 1, "speech"), (5, 6, "speech")], [(1, 3, "retake")])
+        apply_compress_breath(data, [(0.0, 1.0), (5.0, 6.0)], loud_peaks(6, [(3.0, 3.4)]), 6)
+        self.assertFalse(any(item.get("untranscribed") for item in data["keep"]))
+        self.assertEqual(data["flags"], [])
+        self.assertEqual(decisions_problems(data)[0], [])
+
+    def test_a_loud_gap_away_from_the_word_survives_prune(self):
+        data = decisions([(0, 4, "speech")])
+        apply_compress_breath(data, [(0.0, 1.0), (3.0, 4.0)], loud_peaks(4, [(1.8, 2.2)]), 4)
+        self.assertIn((1.8, 2.2), spans(data))
+        words = [(0.0, 1.0, "前"), (3.0, 4.0, "后")]
+        self.assertEqual(prune_orphaned_empty_keeps(data, words), 0)
+        self.assertIn((1.8, 2.2), spans(data))
+        self.assertEqual(decisions_problems(data)[0], [])
+
+    def test_voice_flag_is_appended_to_review(self):
+        data = decisions([(0, 4, "speech")])
+        data["flags"] = [{"id": "f001", "sourceStart": 9.0, "reason": "uncertain", "note": "已有的听点"}]
+        apply_compress_breath(data, [(0.0, 1.0), (3.0, 4.0)], loud_peaks(4, [(1.0, 1.4)]), 4)
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "review.md"
+            path.write_text("# 听点\n\n- f001 1.0s 已有的听点\n", encoding="utf-8")
+            self.assertEqual(sync_voice_review(path, data), 1)
+            text = path.read_text(encoding="utf-8")
+            self.assertIn(VOICE_NOTE, text)
+            self.assertIn("f001 1.0s 已有的听点", text)
+            self.assertEqual(sync_voice_review(path, data), 0)
 
 
 class KeepText(unittest.TestCase):
@@ -251,22 +368,34 @@ class Residue(unittest.TestCase):
 
 class WordStutter(unittest.TestCase):
     def setUp(self):
-        self.aa, self.words = stutter.load_stutter_whitelists(stutter.REFERENCES_DIR)
+        self.function, self.words = stutter.load_stutter_classes(stutter.REFERENCES_DIR)
 
     def find(self, tokens, gap=0.05):
         words, t = [], 0.0
         for tok in tokens:
             words.append((t, t + 0.2, tok))
             t += 0.2 + gap
-        return [h["text"] for h in stutter.find_stutter_drops(words, redup_aa=self.aa, redup_words=self.words)]
+        return [
+            h["text"]
+            for h in stutter.find_stutter_drops(
+                words, function_chars=self.function, repeat_words=self.words
+            )
+        ]
 
     def test_repeated_char_drops_the_first(self):
         self.assertEqual(self.find(["我", "的", "的", "想法"]), ["的"])
+        self.assertEqual(self.find(["就", "就", "是"]), ["就"])
 
     def test_reduplication_split_into_chars_is_kept(self):
         self.assertEqual(self.find(["你", "看", "看", "这个"]), [])
         self.assertEqual(self.find(["密", "密", "麻", "麻"]), [])
         self.assertEqual(self.find(["拜", "拜"]), [])
+        self.assertEqual(self.find(["去", "找", "找"]), [])
+        self.assertEqual(self.find(["迟", "迟", "没"]), [])
+        self.assertEqual(self.find(["空", "荡", "荡"]), [])
+
+    def test_repeated_multichar_word_is_cut(self):
+        self.assertEqual(self.find(["结果", "结果"]), ["结果"])
 
     def test_whitelisted_repeat_word_is_kept(self):
         self.assertEqual(self.find(["为什么", "为什么"]), [])
@@ -368,6 +497,83 @@ class RetakeCandidates(unittest.TestCase):
         base = {"kind": "intra_clause", "earlier": {"sourceStart": 1.0}, "later": {"sourceStart": 3.0}}
         uniq = rc.dedupe_candidates([{**base, "score": 50}, {**base, "score": 90}])
         self.assertEqual([c["score"] for c in uniq], [90])
+
+
+class MaterializeKeeps(unittest.TestCase):
+    def test_drop_splits_keeps_and_a_pause_does_not(self):
+        data = {
+            "version": 1,
+            "source": {"path": "a.mp4", "duration": 20},
+            "drop": [{"sourceStart": 1.0, "sourceEnd": 2.0, "reason": "retake"}],
+            "flags": [{"sourceStart": 1.2, "reason": "uncertain", "note": "听后遍"}],
+        }
+        words = [(0.0, 0.4, "前"), (0.6, 0.9, "句"), (1.1, 1.8, "重说"), (2.2, 2.6, "后"), (4.0, 4.4, "面")]
+        self.assertEqual(materialize_keeps(data, words), 2)
+        self.assertEqual([(k["sourceStart"], k["sourceEnd"]) for k in data["keep"]], [(0.0, 0.9), (2.2, 4.4)])
+        self.assertEqual(data["keep"][0]["timelineStart"], 0.0)
+        self.assertEqual(data["drop"][0]["id"], "d001")
+        self.assertEqual(data["flags"][0]["id"], "f001")
+        self.assertEqual(data["breath"]["maxKeep"], 0.4)
+        errors, _ = decisions_problems(data)
+        self.assertEqual(errors, [])
+
+    def test_existing_keep_is_not_rebuilt(self):
+        data = decisions([(0, 1, "speech")], [(2, 3, "retake")])
+        self.assertEqual(materialize_keeps(data, [(0, 1, "前"), (4, 5, "后")]), 0)
+        self.assertEqual(len(data["keep"]), 1)
+
+    def test_midpoint_inside_a_drop_removes_the_word(self):
+        data = {"version": 1, "source": {"duration": 10}, "drop": [{"sourceStart": 0.5, "sourceEnd": 1.5, "reason": "retake"}]}
+        materialize_keeps(data, [(0.0, 0.4, "留"), (0.8, 1.2, "删"), (1.6, 2.0, "留")])
+        self.assertEqual([(k["sourceStart"], k["sourceEnd"]) for k in data["keep"]], [(0.0, 0.4), (1.6, 2.0)])
+
+
+class ResidueReport(unittest.TestCase):
+    def test_empty_report_has_no_table(self):
+        text = residue.render_md([], [], "run")
+        self.assertIn("没有需要复查的行", text)
+        self.assertNotIn("像完整句", text)
+        self.assertNotIn("|", text)
+
+    def test_bridge_row_is_kept(self):
+        text = residue.render_md([], [{"sourceStart": 1.2, "dropId": "d001", "prevKeep": "k001", "nextKeep": "k002", "clause": "不过是"}], "run")
+        self.assertIn("切断了前后句", text)
+        self.assertNotIn("像完整句", text)
+
+    def test_empty_rows_skip_review_unless_coverage_is_missing(self):
+        import pipeline
+
+        self.assertIn("跳过第 5 步", pipeline.residue_followup({"repeats": 0, "bridgeStutter": 0}, None))
+        self.assertIn("跳过第 5 步", pipeline.residue_followup({"repeats": 0, "bridgeStutter": 0}, 0))
+        self.assertIn("script_coverage.md", pipeline.residue_followup({"repeats": 0, "bridgeStutter": 0}, 2))
+        self.assertIn("第 5 步", pipeline.residue_followup({"repeats": 1, "bridgeStutter": 0}, 0))
+        self.assertNotIn("跳过", pipeline.residue_followup({"repeats": 1, "bridgeStutter": 0}, 0))
+
+
+class ScriptCoverageSections(unittest.TestCase):
+    def test_heading_anchor_required_in_corpus(self):
+        import tempfile
+        import validate_script_coverage as cov
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            script = root / "脚本.md"
+            script.write_text(
+                "开场\n\n## WeLink 的使用说明\n\n搜 WeLink 就能找到。\n",
+                encoding="utf-8",
+            )
+            sections = cov.parse_script_sections(script)
+            self.assertEqual(len(sections), 2)
+            self.assertEqual(sections[1]["id"], "H1")
+            self.assertTrue(sections[1]["is_heading_section"])
+            anchor = sections[1]["heading_anchor"]
+            self.assertIn("welink", anchor.lower())
+            self.assertTrue(cov.anchor_in_corpus(anchor, "fork之后的welink的使用说明"))
+            self.assertFalse(cov.anchor_in_corpus(anchor, "只有welink没有使用说明"))
+
+    def test_proper_noun_repeat_filtered_from_residue(self):
+        norms = residue.load_proper_noun_norms()
+        self.assertTrue(residue.repeat_is_proper_noun_only("Obsidian", norms))
 
 
 if __name__ == "__main__":

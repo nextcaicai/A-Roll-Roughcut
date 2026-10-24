@@ -27,18 +27,25 @@ def load_lexicon_lines(path: Path) -> frozenset[str]:
     return frozenset(items)
 
 
-def load_stutter_whitelists(refs_dir: Path) -> tuple[frozenset[str], frozenset[str]]:
-    aa = load_lexicon_lines(refs_dir / "word-stutter-redup.txt")
+def load_stutter_classes(refs_dir: Path) -> tuple[frozenset[str], frozenset[str]]:
+    """Function chars are stutter when doubled. Repeat-words are whole tokens to keep."""
+    function = load_lexicon_lines(refs_dir / "word-stutter-function.txt")
     words = load_lexicon_lines(refs_dir / "word-stutter-repeat-words.txt")
-    return aa, words
+    return function, words
 
 
-def is_legitimate_redup(key: str, *, redup_aa: frozenset[str], redup_words: frozenset[str]) -> bool:
+def is_morphological_redup(
+    key: str,
+    *,
+    function_chars: frozenset[str],
+    repeat_words: frozenset[str],
+) -> bool:
+    """Keep the pair. Content-character AA is 叠词; function AA and repeated multi-char words are not."""
     if not key:
         return True
-    if key in redup_words:
+    if key in repeat_words:
         return True
-    if len(key) == 2 and key[0] == key[1] and key in redup_aa:
+    if len(key) == 1 and key not in function_chars:
         return True
     return False
 
@@ -122,10 +129,10 @@ def find_restarted_openings(words: list[tuple[float, float, str]]) -> list[dict]
 def find_stutter_drops(
     words: list[tuple[float, float, str]],
     *,
-    redup_aa: frozenset[str],
-    redup_words: frozenset[str],
+    function_chars: frozenset[str],
+    repeat_words: frozenset[str],
 ) -> list[dict]:
-    """Adjacent identical tokens → drop earlier occurrence."""
+    """Adjacent identical tokens → drop earlier occurrence, unless it is morphological 叠词."""
     hits: list[dict] = []
     i = 0
     while i < len(words) - 1:
@@ -139,11 +146,7 @@ def find_stutter_drops(
         if not k0 or k0 != k1:
             i += 1
             continue
-        # Character-level ASR stores 看看 as two tokens. The whitelist is the joined form.
-        if len(k0) == 1 and (k0 + k1) in redup_aa:
-            i += 2
-            continue
-        if is_legitimate_redup(k0, redup_aa=redup_aa, redup_words=redup_words):
+        if is_morphological_redup(k0, function_chars=function_chars, repeat_words=repeat_words):
             i += 2
             continue
         hits.append(
@@ -170,8 +173,9 @@ def render_md(findings: list[dict], applied: list[dict], dry_run: bool) -> str:
     lines = [
         "# 词级 stutter",
         "",
-        f"规则：keep 内相邻相同词/字（gap ≤ {MAX_GAP_SEC}s），非叠词白名单 → drop 前一 token。"
-        "句号后短开头隔了一口气又重说 → 也删前一截。词表见 `koubo-roughcut/references/lexicon.md`。",
+        f"规则：keep 内相邻相同词/字（gap ≤ {MAX_GAP_SEC}s）。"
+        "单字实词重叠是叠词，留下；虚词/代词的单字重复，以及两个字以上的整词重复，删前一个。"
+        "句号后短开头隔了一口气又重说 → 也删前一截。见 `koubo-roughcut/references/lexicon.md`。",
         "",
         f"候选 **{len(findings)}** · 应用 **{len(applied)}** · {'dry-run' if dry_run else 'applied'}",
         "",
@@ -208,13 +212,13 @@ def main() -> int:
         raise SystemExit("use either --dry-run or --apply")
     dry_run = not args.apply
 
-    redup_aa, redup_words = load_stutter_whitelists(args.refs_dir)
+    function_chars, repeat_words = load_stutter_classes(args.refs_dir)
     transcript = load_json(args.transcript)
     before = load_json(args.decisions)
     keep = before.get("keep") or []
     all_words = load_words(transcript)
     scoped = words_in_keep(all_words, keep)
-    findings = find_stutter_drops(scoped, redup_aa=redup_aa, redup_words=redup_words)
+    findings = find_stutter_drops(scoped, function_chars=function_chars, repeat_words=repeat_words)
     findings.extend(find_restarted_openings(scoped))
 
     after = copy.deepcopy(before)

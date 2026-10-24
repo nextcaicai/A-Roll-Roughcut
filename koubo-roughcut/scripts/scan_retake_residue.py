@@ -9,7 +9,36 @@ from pathlib import Path
 
 from decisions_common import normalize_zh
 
+REFERENCES_DIR = Path(__file__).resolve().parent.parent / "references"
 CLAUSE_SPLIT = re.compile(r"[，。！？；]")
+
+
+def load_proper_noun_norms(refs_dir: Path = REFERENCES_DIR) -> set[str]:
+    path = refs_dir / "proper-nouns.txt"
+    if not path.is_file():
+        return set()
+    out: set[str] = set()
+    for raw in path.read_text(encoding="utf-8").splitlines():
+        line = raw.split("#", 1)[0].strip()
+        if line:
+            out.add(normalize_zh(line))
+    return out
+
+
+def repeat_is_proper_noun_only(phrase: str, norms: set[str]) -> bool:
+    """Cross-clause product names are not retake residue."""
+    pn = normalize_zh(phrase)
+    if not pn or not norms:
+        return False
+    if pn in norms:
+        return True
+    if len(pn) <= 14:
+        for term in norms:
+            if len(term) < 4:
+                continue
+            if pn == term or (len(pn) >= 4 and (pn in term or term in pn)):
+                return True
+    return False
 
 
 def load_words(transcript: dict) -> list[tuple[float, float, str]]:
@@ -208,8 +237,10 @@ def time_at_char_index(times: list[float], idx: int) -> float:
 def scan_keeps(
     keep: list[dict],
     words: list[tuple[float, float, str]],
+    proper_noun_norms: set[str] | None = None,
 ) -> list[dict]:
     findings: list[dict] = []
+    pn_norms = proper_noun_norms if proper_noun_norms is not None else load_proper_noun_norms()
     speech_keeps = [k for k in sorted(keep, key=lambda x: float(x["sourceStart"])) if k.get("reason") == "speech"]
     for item in speech_keeps:
         ss, se = float(item["sourceStart"]), float(item["sourceEnd"])
@@ -221,6 +252,8 @@ def scan_keeps(
         text = "".join(t for _, _, t in wds)
         norm, times = char_time_map(wds)
         for phrase, i, j in find_intra_repeats(text):
+            if repeat_is_proper_noun_only(phrase, pn_norms):
+                continue
             t0 = time_at_char_index(times, i)
             t1 = time_at_char_index(times, j)
             findings.append(
@@ -385,17 +418,20 @@ def scan_suspicious_drops(
 
 def render_md(
     findings: list[dict],
-    drop_flags: list[dict],
     bridge_flags: list[dict],
     run_label: str,
 ) -> str:
-    lines = [
-        f"# 残留重说审查 · {run_label}",
-        "",
-        "气口压缝后、审片前过一遍。模型或人据表改 `cut_decisions.json`，再 `validate_decisions.py`。",
-        "",
-    ]
+    lines = [f"# 残留重说审查 · {run_label}", ""]
     repeats = [f for f in findings if f["kind"] != "maybe-wrong-drop"]
+    if not repeats and not bridge_flags:
+        lines.append("没有需要复查的行。")
+        lines.append("")
+        return "\n".join(lines)
+    lines.append(
+        "只列留下的重复，以及把一句话从中间切断的卡顿。专名在 keep 内跨句再次出现（命中 `proper-nouns.txt`）不列在此。"
+    )
+    lines.append("据表改 `cut_decisions.json`，再 `validate_decisions.py`。")
+    lines.append("")
     if repeats:
         lines.append("## 疑似残留重说（keep 内或接缝）")
         lines.append("")
@@ -418,11 +454,6 @@ def render_md(
                     f"重叠「{f['overlap']}」 |"
                 )
         lines.append("")
-    else:
-        lines.append("## 疑似残留重说")
-        lines.append("")
-        lines.append("未扫到明显重复子串（仍建议听 `review.md` 抽检点）。")
-        lines.append("")
 
     if bridge_flags:
         lines.append("## 疑似误删（stutter 切断了前后句）")
@@ -435,28 +466,16 @@ def render_md(
                 f"`{f.get('prevKeep')}`→`{f.get('nextKeep')}` | {f.get('clause', '')[:28]} |"
             )
         lines.append("")
-        lines.append("常见于「也不｜不过是两年前｜当时」这类：应合并 keep 或删掉 drop。")
-        lines.append("")
-
-    if drop_flags:
-        lines.append("## 疑似误删（drop 里像完整句，且 keep 未再出现）")
-        lines.append("")
-        lines.append("| 源片时间 | drop | 原因 | 内容 |")
-        lines.append("|---|---|---|---|")
-        for f in drop_flags:
-            lines.append(
-                f"| {fmt_ms(f['sourceStart'])} | `{f.get('dropId')}` | {f.get('reason')} | "
-                f"{f.get('clause', '')[:36]} |"
-            )
-        lines.append("")
-        lines.append("误删多为「整段重说」规则过头；核对脚本/听感后再决定恢复 keep 或改 drop。")
+        lines.append("前后两截是同一句时，把这段 drop 恢复进 keep。")
         lines.append("")
 
     lines.append("## 处理约定")
     lines.append("")
-    lines.append("- **keep 内重复**：在 drop 补区间或收窄 keep，留最后一遍完整句。")
-    lines.append("- **接缝重复**：修前一段 sourceEnd 或后一段 sourceStart。")
-    lines.append("- **疑似误删**：优先恢复进 keep，或把 drop 改成 `flags` 让人听。")
+    if repeats:
+        lines.append("- **keep 内重复**：在 drop 补区间或收窄 keep，留最后一遍完整句。")
+        lines.append("- **接缝重复**：修前一段 sourceEnd 或后一段 sourceStart。")
+    if bridge_flags:
+        lines.append("- **切断的句子**：恢复这段 drop，或把两段 keep 并回去。拿不准就改成 flag。")
     lines.append("")
     return "\n".join(lines)
 
@@ -472,17 +491,18 @@ def main() -> int:
     words = load_words(transcript)
     keep = data.get("keep") or []
     drops = data.get("drop") or []
-    findings = scan_keeps(keep, words)
-    drop_flags = scan_suspicious_drops(keep, drops, words)
+    findings = scan_keeps(keep, words, load_proper_noun_norms())
     bridge_flags = scan_bridge_stutter_drops(keep, drops, words)
     label = args.decisions.parent.name
-    md = render_md(findings, drop_flags, bridge_flags, label)
+    md = render_md(findings, bridge_flags, label)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(md, encoding="utf-8")
     print(
-        f"repeats: {len(findings)}  bridge-stutter: {len(bridge_flags)}  suspicious drops: {len(drop_flags)}",
+        f"repeats: {len(findings)}  bridge-stutter: {len(bridge_flags)}",
         file=__import__("sys").stderr,
     )
+    if not findings and not bridge_flags:
+        print("没有需要复查的行", file=__import__("sys").stderr)
     print(args.output)
     return 0
 

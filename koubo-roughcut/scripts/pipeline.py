@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""SKILL step 5 in one run: breath, lead-in, word stutter, script coverage, residue scan.
+"""SKILL step 4 in one run: build keeps, then breath, lead-in, word stutter, script coverage, residue scan.
 
-Stops at the first failing step and says how to resume. Does not call Jev.
+Stops at the first failing step and says how to resume.
 """
 from __future__ import annotations
 
@@ -16,14 +16,14 @@ from decisions_common import (
     PIPELINE_SNAPSHOT,
     decisions_problems,
     fill_decision_text,
+    materialize_keeps,
     prune_orphaned_empty_keeps,
-    workspace_root,
 )
 from review_log import load_words
 from run_summary import build_run_summary, write_run_summary
 
 SCRIPTS_DIR = Path(__file__).resolve().parent
-REPO_ROOT = workspace_root()
+REPO_ROOT = SCRIPTS_DIR.parent.parent
 STEPS = ("breath", "stutter", "coverage", "residue")
 STEP_LABELS = {
     "breath": "气口压缝 + 入点回退",
@@ -85,8 +85,18 @@ def coverage_missing(run: Path) -> int | None:
     path = run / "script_coverage.md"
     if not path.is_file():
         return None
-    m = re.search(r"missing \*\*(\d+)\*\*", path.read_text(encoding="utf-8"))
-    return int(m.group(1)) if m else None
+    text = path.read_text(encoding="utf-8")
+    total = 0
+    found = False
+    m = re.search(r"missing \*\*(\d+)\*\*", text)
+    if m:
+        total += int(m.group(1))
+        found = True
+    m2 = re.search(r"section \*\*(\d+)\*\*", text)
+    if m2:
+        total += int(m2.group(1))
+        found = True
+    return total if found else None
 
 
 def main() -> int:
@@ -102,9 +112,14 @@ def main() -> int:
         print("没有 transcript.corrected.json。先做第 2 步修字，再跑这里。", file=sys.stderr)
         return 1
     if not dec_path.is_file():
-        print("没有 cut_decisions.json。先做第 4 步保守取舍，再跑这里。", file=sys.stderr)
+        print("没有 cut_decisions.json。先做第 3 步保守取舍，再跑这里。", file=sys.stderr)
         return 1
     decisions = json.loads(dec_path.read_text(encoding="utf-8"))
+    if not decisions.get("keep"):
+        words = load_words(json.loads((run / "transcript.corrected.json").read_text(encoding="utf-8")))
+        built = materialize_keeps(decisions, words)
+        dec_path.write_text(json.dumps(decisions, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        print(f"· 按 drop 生成 keep {built} 段", file=sys.stderr)
     errors, _ = decisions_problems(decisions)
     if errors:
         print("cut_decisions.json 没过校验，先改好再跑：", file=sys.stderr)
@@ -164,8 +179,18 @@ def main() -> int:
     elif script is None:
         print("脚本覆盖：没有逐字稿，没查")
     print(f"指标写在 {run / 'run_summary.json'}")
-    print("下一步（第 6 步）：模型读 retake_residue.md 修订 cut_decisions.json，再开审片面板。")
+    print(residue_followup(residue, missing))
     return 0
+
+
+def residue_followup(residue: dict[str, int], missing: int | None) -> str:
+    """What to do after the scan. Empty real rows skip the model review."""
+    real = int(residue.get("repeats") or 0) + int(residue.get("bridgeStutter") or 0)
+    if real == 0 and not missing:
+        return "残留报告没有需要复查的行。跳过第 5 步，直接开审片面板。"
+    if real == 0 and missing:
+        return f"残留报告没有需要复查的行。脚本覆盖缺 {missing} 个专名，第 5 步只核对 script_coverage.md，然后开审片。"
+    return "下一步（第 5 步）：模型读 retake_residue.md 修订 cut_decisions.json。新加的 flag 补进 review.md 听点，再开审片面板。"
 
 
 def _residue_counts(path: Path) -> dict[str, int]:

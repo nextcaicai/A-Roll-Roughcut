@@ -26,12 +26,54 @@ def load_lexicon_terms(path: Path) -> list[str]:
 
 def parse_script_lines(path: Path) -> list[tuple[str, str]]:
     lines: list[tuple[str, str]] = []
+    for section in parse_script_sections(path):
+        lines.extend(section["lines"])
+    return lines
+
+
+def parse_script_sections(path: Path) -> list[dict]:
+    """Split 脚本.md into S0 intro and H* sections starting at ##."""
+    sections: list[dict] = []
+    current: dict = {
+        "id": "S0",
+        "title": "（开篇）",
+        "lines": [],
+        "is_heading_section": False,
+        "heading_anchor": "",
+    }
+    heading_count = 0
     for i, raw in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
         text = raw.strip()
         if not text:
             continue
-        lines.append((f"L{i}", text))
-    return lines
+        ref = f"L{i}"
+        if text.startswith("## "):
+            if current["lines"]:
+                sections.append(current)
+            heading_count += 1
+            title = text[3:].strip()
+            current = {
+                "id": f"H{heading_count}",
+                "title": title,
+                "lines": [(ref, text)],
+                "is_heading_section": True,
+                "heading_anchor": normalize_zh(title),
+            }
+        else:
+            current["lines"].append((ref, text))
+    if current["lines"]:
+        sections.append(current)
+    return sections
+
+
+def anchor_in_corpus(anchor: str, corpus: str) -> bool:
+    if len(anchor) < 4:
+        return True
+    if anchor in corpus:
+        return True
+    if re.search(r"[A-Za-z]", anchor):
+        return anchor.lower() in corpus.lower()
+    return False
 
 
 def load_words(transcript: dict) -> list[tuple[float, float, str]]:
@@ -111,17 +153,21 @@ def render_md(
     keep_corpus_preview: str,
     line_rows: list[dict],
     global_missing: list[str],
+    section_rows: list[dict],
+    section_missing: list[str],
     strict: bool,
 ) -> str:
     n_missing = len(global_missing)
-    status = "FAIL" if n_missing else "OK"
+    n_section = len(section_missing)
+    status = "FAIL" if (n_missing or n_section) else "OK"
     lines = [
         "# 脚本覆盖 · proper nouns",
         "",
-        f"脚本：`{script_path.name}` · 状态 **{status}** · missing **{n_missing}**"
+        f"脚本：`{script_path.name}` · 状态 **{status}** · missing **{n_missing}** · section **{n_section}**"
         + (" · strict" if strict else ""),
         "",
         "规则：脚本行内出现且命中 `proper-nouns.txt` 的条目，须在 **keep 词级转写**（归一化后）中出现。",
+        "各 `##` 小节标题锚点（归一化）也须在 keep 语料中出现。详见 `references/script-coverage.md`。",
         "不检查整句相等；ASR 错字可能仍报 missing（需人听或改 flags）。",
         "",
     ]
@@ -130,6 +176,28 @@ def render_md(
         lines.append("")
         for t in global_missing:
             lines.append(f"- `{t}`")
+        lines.append("")
+
+    if section_missing:
+        lines.append("## 小节标题锚点缺失")
+        lines.append("")
+        for t in section_missing:
+            lines.append(f"- `{t}`")
+        lines.append("")
+
+    if section_rows:
+        lines.extend(
+            [
+                "## 按脚本小节（## 标题锚点）",
+                "",
+                "| 小节 | 标题 | 锚点在 keep |",
+                "|---|---|---|",
+            ]
+        )
+        for row in section_rows:
+            ok = "是" if row["ok"] else "**否**"
+            title = row["title"].replace("|", "\\|")[:48]
+            lines.append(f"| {row['id']} | {title} | {ok} |")
         lines.append("")
 
     lines.extend(["## 按脚本行（仅含专名）", "", "| 行 | 稿内专名 | 缺失 | 相关 drop |", "|---|---|---|---|"])
@@ -228,6 +296,24 @@ def main() -> int:
 
     global_missing = sorted(t for t in all_required if not term_in_corpus(t, corpus))
 
+    section_rows: list[dict] = []
+    section_missing: list[str] = []
+    for section in parse_script_sections(args.script):
+        if not section.get("is_heading_section"):
+            continue
+        anchor = str(section.get("heading_anchor") or "")
+        ok = anchor_in_corpus(anchor, corpus)
+        section_rows.append(
+            {
+                "id": section["id"],
+                "title": section["title"],
+                "anchor": anchor,
+                "ok": ok,
+            }
+        )
+        if not ok and len(anchor) >= 4:
+            section_missing.append(f"{section['id']}:{anchor}")
+
     out_path = args.output or args.decisions.parent / "script_coverage.md"
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(
@@ -236,20 +322,25 @@ def main() -> int:
             keep_corpus_preview=corpus,
             line_rows=line_rows,
             global_missing=global_missing,
+            section_rows=section_rows,
+            section_missing=section_missing,
             strict=args.strict,
         ),
         encoding="utf-8",
     )
 
     print(out_path)
-    if global_missing:
-        print(f"missing {len(global_missing)} proper noun(s) in keep", file=sys.stderr)
-        for t in global_missing[:20]:
-            print(f"  - {t}", file=sys.stderr)
-        if len(global_missing) > 20:
-            print(f"  … and {len(global_missing) - 20} more", file=sys.stderr)
+    if global_missing or section_missing:
+        if global_missing:
+            print(f"missing {len(global_missing)} proper noun(s) in keep", file=sys.stderr)
+            for t in global_missing[:20]:
+                print(f"  - {t}", file=sys.stderr)
+        if section_missing:
+            print(f"section anchor missing {len(section_missing)}", file=sys.stderr)
+            for t in section_missing[:20]:
+                print(f"  - {t}", file=sys.stderr)
         return 1 if args.strict else 0
-    print("all script proper nouns found in keep", file=sys.stderr)
+    print("all script proper nouns and section anchors found in keep", file=sys.stderr)
     return 0
 
 

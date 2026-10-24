@@ -43,11 +43,19 @@ class CueBuild(unittest.TestCase):
         )
         self.assertEqual([cue["text"] for cue in cues], ["好", "下一"])
 
-    def test_line_breaks_past_eighteen_characters(self):
+    def test_line_breaks_only_at_lexical_word_boundaries(self):
         keep = [{"sourceStart": 0.0, "sourceEnd": 5.0}]
-        rows = [(char, index * 0.1, index * 0.1 + 0.1) for index, char in enumerate("一二三四五六七八九十")]
-        cues = export_srt.build_cues(words(*rows), export_srt.with_timeline(keep), max_chars=4, hard_max=4)
-        self.assertEqual([cue["text"] for cue in cues], ["一二三四", "五六七八", "九十"])
+        text = "这是一个需要重新理解和认真解释的问题因为很多人以前都没有意识到"
+        rows = [(char, index * 0.1, index * 0.1 + 0.1) for index, char in enumerate(text)]
+        cues = export_srt.build_cues(
+            words(*rows),
+            export_srt.with_timeline(keep),
+            hard_max=12,
+        )
+        lines = [cue["text"] for cue in cues]
+        self.assertEqual("".join(lines), text)
+        self.assertFalse(any(line.endswith("解") for line in lines[:-1]))
+        self.assertFalse(any(line.startswith("释") for line in lines[1:]))
 
     def test_kept_breath_breaks_the_line(self):
         keep = [{"sourceStart": 0.0, "sourceEnd": 2.0}]
@@ -75,6 +83,34 @@ class CueBuild(unittest.TestCase):
             export_srt.with_timeline(keep),
         )
         self.assertEqual([cue["text"] for cue in cues], ["你好", "世界"])
+
+    def test_punctuation_inside_an_asr_chunk_still_ends_the_sentence(self):
+        keep = [{"sourceStart": 0.0, "sourceEnd": 4.0}]
+        cues = export_srt.build_cues(
+            words(
+                ("我理解的Obsidian。先", 0.0, 2.0),
+                ("说第一件事，", 2.0, 3.0),
+                ("Obsidian到底是什么。", 3.0, 4.0),
+            ),
+            export_srt.with_timeline(keep),
+        )
+        self.assertEqual(
+            [cue["text"] for cue in cues],
+            ["我理解的Obsidian", "先说第一件事", "Obsidian到底是什么"],
+        )
+
+    def test_long_clause_is_balanced_instead_of_leaving_a_one_character_tail(self):
+        keep = [{"sourceStart": 0.0, "sourceEnd": 5.0}]
+        text = "一二三四五六七八九十甲乙丙丁戊己庚辛壬癸天地玄黄宇宙洪荒日月盈昃辰宿列张"
+        rows = [(char, index * 0.1, index * 0.1 + 0.1) for index, char in enumerate(text)]
+        cues = export_srt.build_cues(
+            words(*rows),
+            export_srt.with_timeline(keep),
+        )
+        lines = [cue["text"] for cue in cues]
+        self.assertEqual("".join(lines), text)
+        self.assertEqual(len(lines), 2)
+        self.assertLessEqual(max(map(len, lines)) - min(map(len, lines)), 1)
 
     def test_question_mark_stays_on_the_card(self):
         keep = [{"sourceStart": 0.0, "sourceEnd": 2.0}]

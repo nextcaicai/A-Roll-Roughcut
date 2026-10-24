@@ -4,8 +4,12 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
+import math
 import re
 from pathlib import Path
+
+import jieba
 
 MAX_CUE_CHARS = 18
 HARD_MAX_CHARS = 24
@@ -13,6 +17,8 @@ CLAUSE_END = "，、；：。！？!?"
 TRAILING_PAUSE = "，、；：。,;:."
 MIN_SCRIPT_CLAUSE = 4
 _SKIP = set(" \t\r\n*_`#>*[]()（）【】「」『』“”\"'《》〈〉·—…,.;:!?，、；：。！？")
+
+jieba.setLogLevel(logging.ERROR)
 
 
 def with_timeline(keep: list[dict], *, fps_n: int | None = None, fps_d: int = 1) -> list[dict]:
@@ -161,6 +167,90 @@ def present_line(text: str) -> str:
     return text[:end]
 
 
+def split_at_clause_ends(word: dict) -> list[dict]:
+    """Split ASR chunks that contain text after sentence punctuation."""
+    text = str(word["text"])
+    cuts = [
+        index + 1
+        for index, char in enumerate(text[:-1])
+        if char in CLAUSE_END and text[index + 1] not in CLAUSE_END
+    ]
+    if not cuts:
+        return [word]
+    boundaries = [0, *cuts, len(text)]
+    start = float(word["start"])
+    end = float(word["end"])
+    duration = max(0.0, end - start)
+    out = []
+    for left, right in zip(boundaries, boundaries[1:]):
+        if left == right:
+            continue
+        copied = dict(word)
+        copied["text"] = text[left:right]
+        copied["start"] = start + duration * left / len(text)
+        copied["end"] = start + duration * right / len(text)
+        out.append(copied)
+    return out
+
+
+def lexical_part_boundaries(parts: list[tuple[int, dict]]) -> list[int]:
+    text = "".join(word["text"] for _, word in parts)
+    token_ends = {end for _, _, end in jieba.tokenize(text)}
+    boundaries = [0]
+    offset = 0
+    for index, (_, word) in enumerate(parts, start=1):
+        offset += len(word["text"])
+        if offset in token_ends:
+            boundaries.append(index)
+    if boundaries[-1] != len(parts):
+        boundaries.append(len(parts))
+    return boundaries
+
+
+def semantic_parts(
+    parts: list[tuple[int, dict]], max_chars: int, hard_max: int
+) -> list[list[tuple[int, dict]]]:
+    """Balance a long clause, but only cut at lexical word boundaries."""
+    lengths = [len(word["text"]) for _, word in parts]
+    total = sum(lengths)
+    boundaries = lexical_part_boundaries(parts)
+    count = min(max(2, math.ceil(total / max_chars)), len(boundaries) - 1)
+    if count < 2:
+        return [parts]
+
+    prefix = [0]
+    for length in lengths:
+        prefix.append(prefix[-1] + length)
+    target = total / count
+    inf = float("inf")
+    costs = [[inf] * (len(parts) + 1) for _ in range(count + 1)]
+    previous = [[-1] * (len(parts) + 1) for _ in range(count + 1)]
+    costs[0][0] = 0.0
+    for groups in range(1, count + 1):
+        for end in boundaries[1:]:
+            for begin in boundaries[:-1]:
+                if begin >= end:
+                    continue
+                size = prefix[end] - prefix[begin]
+                if costs[groups - 1][begin] == inf:
+                    continue
+                overflow = max(0, size - hard_max)
+                cost = costs[groups - 1][begin] + (size - target) ** 2 + overflow**2 * 16
+                if cost < costs[groups][end]:
+                    costs[groups][end] = cost
+                    previous[groups][end] = begin
+    if costs[count][len(parts)] == inf:
+        return [parts]
+
+    cuts = [len(parts)]
+    end = len(parts)
+    for groups in range(count, 0, -1):
+        end = previous[groups][end]
+        cuts.append(end)
+    cuts.reverse()
+    return [parts[left:right] for left, right in zip(cuts, cuts[1:])]
+
+
 def build_cues(
     words: list[dict],
     keep: list[dict],
@@ -175,15 +265,17 @@ def build_cues(
         item = keep_for_midpoint(word["start"], word["end"], keep)
         if item is None:
             continue
-        placed.append(
-            {
-                "text": word["word"],
-                "start": to_timeline(word["start"], item),
-                "end": to_timeline(word["end"], item),
-                "keepIndex": item.get("keepIndex", item["sourceStart"]),
-                "keepSourceStart": float(item["sourceStart"]),
-                "keepSourceEnd": float(item["sourceEnd"]),
-            }
+        placed.extend(
+            split_at_clause_ends(
+                {
+                    "text": word["word"],
+                    "start": to_timeline(word["start"], item),
+                    "end": to_timeline(word["end"], item),
+                    "keepIndex": item.get("keepIndex", item["sourceStart"]),
+                    "keepSourceStart": float(item["sourceStart"]),
+                    "keepSourceEnd": float(item["sourceEnd"]),
+                }
+            )
         )
     breaks = script_break_indexes(placed, script) if script else set()
     cues: list[dict] = []
@@ -204,15 +296,8 @@ def build_cues(
             emit(buf)
             buf.clear()
             return
-        piece: list[tuple[int, dict]] = []
-        for index, word in buf:
-            if piece:
-                joined = "".join(item["text"] for _, item in piece) + word["text"]
-                if len(joined) > max_chars:
-                    emit(piece)
-                    piece = []
-            piece.append((index, word))
-        emit(piece)
+        for piece in semantic_parts(buf, max_chars, hard_max):
+            emit(piece)
         buf.clear()
 
     for index, word in enumerate(placed):

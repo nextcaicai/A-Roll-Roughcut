@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import re
-from pathlib import Path
 
 PUNCT_RE = re.compile(r"[\s，。！？、；：,.!?;:\"'「」『』（）()\[\]【】—\-…]+")
 _ID_NUM = re.compile(r"^([kdf])(\d+)$")
@@ -11,21 +10,6 @@ REASONS = frozenset({"speech", "breath", "retake", "stutter", "long-pause", "unc
 OVERLAP_TOL = 0.02
 TOUCH_TOL = 0.05
 PIPELINE_SNAPSHOT = "cut_decisions.pipeline.json"
-
-
-def workspace_root() -> Path:
-    """Directory that holds .env and the film folders.
-
-    The skill lives at <root>/koubo-roughcut or <root>/.agents/skills/koubo-roughcut.
-    """
-    skill_root = Path(__file__).resolve().parent.parent
-    container = skill_root.parent
-    if container.name == "skills" and container.parent.name == ".agents":
-        return container.parent.parent
-    for candidate in (skill_root, *skill_root.parents):
-        if (candidate / ".git").exists():
-            return candidate
-    return container
 
 
 def next_item_id(prefix: str, items: list[dict]) -> str:
@@ -225,6 +209,11 @@ def prune_orphaned_empty_keeps(data: dict, words: list[tuple[float, float, str]]
         if keep_has_words(item, words):
             kept.append(item)
             continue
+        if item.get("untranscribed"):
+            item["reason"] = "breath"
+            item["text"] = ""
+            kept.append(item)
+            continue
         ss, se = float(item["sourceStart"]), float(item["sourceEnd"])
         if any(_abuts(ss, se, float(s["sourceStart"]), float(s["sourceEnd"])) for s in spoken):
             item["reason"] = "breath"
@@ -246,3 +235,71 @@ def prune_orphaned_empty_keeps(data: dict, words: list[tuple[float, float, str]]
     if removed:
         recompute_timeline(data)
     return removed
+
+
+def ensure_item_ids(data: dict) -> None:
+    """Fill missing drop and flag ids. Existing ids stay put."""
+    for prefix, key in (("d", "drop"), ("f", "flags")):
+        items = data.setdefault(key, [])
+        for item in items:
+            if not item.get("id"):
+                item["id"] = next_item_id(prefix, items)
+
+
+def _midpoint_in_drop(start: float, end: float, drops: list[dict]) -> bool:
+    mid = (start + end) / 2
+    for drop in drops:
+        if float(drop["sourceStart"]) <= mid < float(drop["sourceEnd"]):
+            return True
+    return False
+
+
+def _gap_hits_drop(start: float, end: float, drops: list[dict]) -> bool:
+    if end <= start + 0.001:
+        return False
+    for drop in drops:
+        ds, de = float(drop["sourceStart"]), float(drop["sourceEnd"])
+        if min(de, end) - max(ds, start) > 0.001:
+            return True
+    return False
+
+
+def materialize_keeps(data: dict, words: list[tuple[float, float, str]]) -> int:
+    """Build speech keeps from words whose midpoint sits outside every drop.
+
+    A non-empty keep is left alone, so a later pipeline run does not rebuild
+    cuts a person already edited. Returns how many keeps were written.
+    """
+    if data.get("keep"):
+        return 0
+    data.setdefault("version", 1)
+    breath = data.setdefault("breath", {})
+    breath.setdefault("maxKeep", 0.4)
+    breath.setdefault("leadIn", 0.12)
+    data.setdefault("flags", [])
+    drops = data.setdefault("drop", [])
+    ensure_item_ids(data)
+    kept = [(ws, we) for ws, we, text in words if text and not _midpoint_in_drop(ws, we, drops)]
+    runs: list[list[tuple[float, float]]] = []
+    for start, end in kept:
+        if not runs or _gap_hits_drop(runs[-1][-1][1], start, drops):
+            runs.append([(start, end)])
+        else:
+            runs[-1].append((start, end))
+    keep: list[dict] = []
+    for index, run in enumerate(runs, start=1):
+        keep.append(
+            {
+                "id": f"k{index:03d}",
+                "sourceStart": round(run[0][0], 3),
+                "sourceEnd": round(run[-1][1], 3),
+                "timelineStart": 0.0,
+                "timelineEnd": 0.0,
+                "text": "",
+                "reason": "speech",
+            }
+        )
+    data["keep"] = keep
+    if keep:
+        recompute_timeline(data)
+    return len(keep)

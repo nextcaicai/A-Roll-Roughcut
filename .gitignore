@@ -8,4 +8,8 @@ __pycache__/
 *.wav
 *.mp4
 *.fcpxml
+/videos/
+.agents
+.grok
 .export-dir
+skills-lock.json

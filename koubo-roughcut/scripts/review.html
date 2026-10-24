@@ -55,6 +55,8 @@
     .gap { display: inline; margin: 0 1px; padding: 0 3px; border-radius: 3px; font-size: 12px; font-variant-numeric: tabular-nums; cursor: pointer; }
     .gap.cut { color: #6f6f68; text-decoration: line-through; text-decoration-color: var(--drop); text-decoration-thickness: 1.5px; }
     .gap.kept { background: #3a3a40; color: #bdbdb6; text-decoration: none; }
+    .gap.voice.cut { color: var(--accent); }
+    .gap.voice.kept { background: #3a3426; color: var(--accent); text-decoration: none; }
     .gap.cur, .gap.sel { outline: 1px solid var(--accent); }
     .transcript.selecting { cursor: text; }
     .tx-hint { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; padding: 8px 20px; border-bottom: 1px solid var(--line); color: var(--muted); font-size: 12px; }
@@ -149,7 +151,7 @@
   </div>
   <script src="/review_cut.js"></script>
   <script>
-    const { planCutAction, silenceCuts, silenceMarks, silenceLabel, silenceTitle, pauseDeleteIntervals } = ReviewCut;
+    const { planCutAction, silenceCuts, silenceMarks, voiceMarks, silenceLabel, silenceTitle, pauseDeleteIntervals } = ReviewCut;
     const $ = (id) => document.getElementById(id);
     const REASONS = ["speech", "breath", "retake", "stutter", "long-pause", "uncertain", "manual"];
     const EPS = 0.001;
@@ -401,7 +403,10 @@
       const bare = words.map((r) => ({ s: r.s, e: r.e }));
       const ks = keeps();
       if (wave && wave.peaks && wave.duration) {
-        return silenceMarks(bare, ks, wave.peaks, wave.duration, { drops: state?.decisions?.drop || [] });
+        const drops = state?.decisions?.drop || [];
+        const pauses = silenceMarks(bare, ks, wave.peaks, wave.duration, { drops });
+        const voices = voiceMarks(bare, ks, wave.peaks, wave.duration, { drops });
+        return pauses.concat(voices).sort((a, b) => a.start - b.start || a.end - b.end);
       }
       return silenceCuts(bare, ks, { from: 0, to: duration() || null }).map((cut) => ({
         start: cut.start,
@@ -431,7 +436,7 @@
         if (after >= 0 && !prevEl) continue;
         for (const mark of list) {
           const el = document.createElement("span");
-          el.className = "gap " + (mark.role === "kept" ? "kept" : "cut");
+          el.className = "gap" + (mark.kind === "voice" ? " voice" : "") + (mark.role === "kept" ? " kept" : " cut");
           el.textContent = silenceLabel(mark);
           el.title = silenceTitle(mark);
           el.dataset.g = String(gaps.length);
@@ -768,7 +773,7 @@
       const item = currentItem();
       let html = "";
       if (selectedGap) {
-        const name = selectedGap.kind === "silence" ? "静音" : "气口";
+        const name = selectedGap.kind === "voice" ? "有声无字" : selectedGap.kind === "silence" ? "静音" : "气口";
         const verb = selectedGap.role === "cut" ? "划掉" : "留下";
         html += `<h2>${verb}的${name}</h2>
           <p>${escapeHtml(silenceLabel(selectedGap))}　${verb} ${selectedGap.seconds.toFixed(2)} 秒</p>
@@ -793,8 +798,11 @@
       if (flags.length) {
         const left = unheardFlags();
         const head = left ? `建议听 · 还有 ${left} 处没听（共 ${flags.length}）` : `建议听 · ${flags.length} 处都听过`;
+        const ordered = flags
+          .map((f, i) => ({ f, i }))
+          .sort((a, b) => (Number(a.f.sourceStart) || 0) - (Number(b.f.sourceStart) || 0) || a.i - b.i);
         html += `<h2 style="margin-top:14px">${head}</h2><div class="flags">` +
-          flags.map((f, i) => `<div class="flag${f.heard ? " heard" : ""}" data-i="${i}" title="${f.heard ? "听过。再点一次重听" : "点一下去听，这条记为听过"}">${f.heard ? "✓" : "▸"} ${fmtMs(f.sourceStart)} ${escapeHtml(f.note || f.reason || "")}</div>`).join("") + `</div>`;
+          ordered.map(({ f, i }) => `<div class="flag${f.heard ? " heard" : ""}" data-i="${i}" title="${f.heard ? "听过。再点一次重听" : "点一下去听，这条记为听过"}">${f.heard ? "✓" : "▸"} ${fmtMs(f.sourceStart)} ${escapeHtml(f.note || f.reason || "")}</div>`).join("") + `</div>`;
       }
       ed.innerHTML = html;
       if (selectedGap) {

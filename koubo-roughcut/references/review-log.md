@@ -6,8 +6,8 @@
 
 - 第一次对这个 run 打开面板时，当时的 `cut_decisions.json` 存成 `cut_decisions.pipeline.json`。
 - 之后每次打开面板都读这份，不再用「这次打开时的 JSON」。所以关掉再开、分几次审，diff 都是累计的。
-- 重跑 `pipeline.py`（第 5 步）会删掉旧基准；下次打开面板重新存。
-- 第 6 步模型复查改的东西，在第一次开面板之前，算流水线产出。
+- 重跑 `pipeline.py`（第 4 步）会删掉旧基准；下次打开面板重新存。
+- 第 5 步模型复查改的东西，在第一次开面板之前，算流水线产出。
 
 ## 怎么比
 
@@ -34,7 +34,7 @@
 
 保存时如果 run 里已有 `run_summary.json`，会把 `stats` 和没听的 flag 数写进它的 `review` 段。没有这份文件也会新建一份，只含 review。
 
-## 学偏好（第 8 步）
+## 学偏好（第 7 步）
 
 用户说「学一下」时跑 `learn_preferences.py`。它只汇总 `review_log.json`，写出 `preference_candidates.md`，不改 `references/`。
 

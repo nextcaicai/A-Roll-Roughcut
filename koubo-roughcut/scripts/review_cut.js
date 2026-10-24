@@ -9,6 +9,8 @@
   const MIN_CUT_GAP = 0.02;
   const BREATH_LEFT = 0.08;
   const SPEECH_PEAK = 0.02;
+  const VOICE_PEAK = 0.08;
+  const VOICE_MIN = 0.12;
 
   // How much quiet audio sits inside the keep, immediately before it ends.
   // The early mute may use only this stretch, and never more than MUTE_LEAD.
@@ -121,6 +123,106 @@
       else merged.push({ start: raw[i].start, end: raw[i].end });
     }
     return merged.filter(function (s) { return s.end - s.start >= minDuration; });
+  }
+
+  function detectLoud(peaks, duration, opts) {
+    const options = opts || {};
+    const threshold = options.threshold == null ? VOICE_PEAK : options.threshold;
+    const minDuration = options.minDuration == null ? VOICE_MIN : options.minDuration;
+    const mergeGap = options.mergeGap == null ? 0.10 : options.mergeGap;
+    if (!peaks || !peaks.length || !(duration > 0)) return [];
+    const dt = duration / peaks.length;
+    const raw = [];
+    let run = null;
+    for (let i = 0; i <= peaks.length; i++) {
+      const loud = i < peaks.length && peaks[i] >= threshold;
+      if (loud) {
+        if (run == null) run = i;
+      } else if (run != null) {
+        const start = run * dt;
+        const end = i * dt;
+        if (end - start >= 0.02) raw.push({ start: start, end: end });
+        run = null;
+      }
+    }
+    const merged = [];
+    for (let i = 0; i < raw.length; i++) {
+      const prev = merged[merged.length - 1];
+      if (prev && raw[i].start - prev.end <= mergeGap) prev.end = raw[i].end;
+      else merged.push({ start: raw[i].start, end: raw[i].end });
+    }
+    return merged.filter(function (s) { return s.end - s.start >= minDuration; });
+  }
+
+  function subtractBlocks(start, end, blocks) {
+    const sorted = blocks.slice().sort(function (a, b) { return a[0] - b[0]; });
+    const free = [];
+    let cur = start;
+    for (let i = 0; i < sorted.length; i++) {
+      const a = sorted[i][0];
+      const b = sorted[i][1];
+      if (b <= cur + EPS) continue;
+      if (a >= end - EPS) break;
+      if (a > cur + EPS) free.push([cur, Math.min(a, end)]);
+      cur = Math.max(cur, b);
+      if (cur >= end - EPS) break;
+    }
+    if (cur < end - EPS) free.push([cur, end]);
+    return free.filter(function (iv) { return iv[1] - iv[0] >= 0.02; });
+  }
+
+  function followsContent(start, drops) {
+    for (let i = 0; i < drops.length; i++) {
+      const de = drops[i].sourceEnd;
+      if (start >= de - EPS && start <= de + 0.05) return true;
+    }
+    return false;
+  }
+
+  function voiceMarks(words, keeps, peaks, duration, opts) {
+    const options = opts || {};
+    const minDuration = options.minDuration == null ? VOICE_MIN : options.minDuration;
+    if (!peaks || !peaks.length || !(duration > 0)) return [];
+    const loud = detectLoud(peaks, duration, {
+      threshold: options.voicePeak == null ? VOICE_PEAK : options.voicePeak,
+      minDuration: minDuration,
+      mergeGap: 0.10,
+    });
+    const sortedKeeps = keeps.slice().sort(function (a, b) { return a.sourceStart - b.sourceStart; });
+    const drops = options.drops || [];
+    const content = drops.filter(function (d) {
+      return d && d.reason !== "breath" && d.reason !== "long-pause";
+    });
+    const blocks = [];
+    for (let i = 0; i < words.length; i++) blocks.push([words[i].s, words[i].e]);
+    for (let i = 0; i < content.length; i++) blocks.push([content[i].sourceStart, content[i].sourceEnd]);
+    const marks = [];
+    for (let i = 0; i < loud.length; i++) {
+      const free = subtractBlocks(loud[i].start, loud[i].end, blocks);
+      for (let f = 0; f < free.length; f++) {
+        const a = free[f][0];
+        const b = free[f][1];
+        if (b - a < minDuration - 0.001) continue;
+        if (followsContent(a, content)) continue;
+        const pieces = silencePieces(a, b, sortedKeeps, []);
+        for (let p = 0; p < pieces.length; p++) {
+          const piece = pieces[p];
+          if (piece.end - piece.start < minDuration - 0.001) continue;
+          const seconds = piece.end - piece.start;
+          marks.push({
+            start: piece.start,
+            end: piece.end,
+            afterWord: attachAfterWord((piece.start + piece.end) / 2, words),
+            role: piece.inKeep ? "kept" : "cut",
+            seconds: seconds,
+            removed: piece.inKeep ? 0 : seconds,
+            kept: piece.inKeep ? seconds : 0,
+            kind: "voice",
+          });
+        }
+      }
+    }
+    return marks;
   }
 
   function attachAfterWord(mid, words) {
@@ -264,12 +366,13 @@
 
   function silenceLabel(cut) {
     const seconds = cut.seconds != null ? cut.seconds : cut.removed;
+    if (cut.kind === "voice") return "[声" + fmtSec(seconds) + "s]";
     return "[..." + fmtSec(seconds) + "s]";
   }
 
   function silenceTitle(cut) {
-    const name = cut.kind === "silence" ? "静音" : "气口";
     const seconds = cut.seconds != null ? cut.seconds : cut.removed;
+    const name = cut.kind === "voice" ? "有声无字" : cut.kind === "silence" ? "静音" : "气口";
     if (cut.role === "kept") return name + "，留下 " + seconds.toFixed(2) + " 秒";
     return name + "，划掉 " + seconds.toFixed(2) + " 秒";
   }
@@ -279,6 +382,8 @@
     trailingSilence,
     silenceCuts,
     detectSilences,
+    detectLoud,
+    voiceMarks,
     silenceMarks,
     pauseDeleteIntervals,
     silenceLabel,
